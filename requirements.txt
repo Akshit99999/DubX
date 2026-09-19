@@ -1,6 +1,7 @@
 # Core optional integrations
 edge-tts>=6.1.0
 gradio>=4.0.0
+python-dotenv>=1.0.0
 
 # Optional ASR / media quality upgrades
 faster-whisper>=1.0.0
