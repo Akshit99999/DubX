@@ -195,7 +195,7 @@ def transcreate(
     dialect_level: int = 2,
     context: str | None = None,
 ) -> dict[str, Any]:
-    """Transcreate text, using Astra 6 / Gemini when configured and an offline KB otherwise."""
+    """Transcreate text using curated idioms, Astra 6, or Gemini."""
 
     config = language_config(target_language)
     lang_key = target_language.lower()
@@ -204,11 +204,27 @@ def transcreate(
     register = {1: "clear professional", 2: "warm conversational", 3: "natural youth slang"}[dialect_level]
     budget = budget_for(text, duration_seconds) if duration_seconds is not None else None
 
-    # Priority 1: Astra 6 (GPT-6 Astra via Abacus.AI RouteLLM)
+    # Priority 1: Curated cultural idiom matches
+    entry = OFFLINE_IDIOMS.get(_normalise(text))
+    if entry:
+        output = entry.get(lang_key, entry.get("hindi", text))
+        if budget and budget_for(output, budget.duration_seconds).status == "overflow":
+            output = trim_to_budget(output, budget.target_syllables)
+        return {
+            "original_text": text,
+            "detected_intent": entry["meaning"],
+            "transcreated_text": output,
+            "explanation": f"Matched cultural equivalent for {config['name']}.",
+            "budget": budget,
+            "engine": "offline-idiom",
+            "register": register,
+        }
+
+    # Priority 2: Astra 6 (GPT-6 Astra via Abacus.AI RouteLLM)
     online = _astra(text, config["name"], budget, api_key, register, context)
     engine_name = "astra-6"
 
-    # Priority 2: Gemini
+    # Priority 3: Gemini
     if not online:
         online = _gemini(text, config["name"], budget, api_key, register, context)
         engine_name = "gemini"

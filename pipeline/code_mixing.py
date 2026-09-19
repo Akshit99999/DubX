@@ -191,21 +191,21 @@ def code_mix_text(text: str, primary_language: str, secondary_language: str, int
 
     key = (primary, secondary, _normalise(text))
 
-    # Priority 1: Astra 6 (GPT-6 Astra via Abacus.AI RouteLLM)
-    result = _astra_mix(text, primary, secondary, intensity, script, api_key)
-    engine = "astra-6" if result else None
+    # Priority 1: Curated offline mix matrix
+    result = OFFLINE_MIXES.get(key)
+    engine = "offline-matrix" if result else None
 
-    # Priority 2: Gemini
+    # Priority 2: Astra 6 (GPT-6 Astra via Abacus.AI RouteLLM)
+    if not result:
+        result = _astra_mix(text, primary, secondary, intensity, script, api_key)
+        if result:
+            engine = "astra-6"
+
+    # Priority 3: Gemini
     if not result:
         result = _gemini_mix(text, primary, secondary, intensity, script, api_key)
         if result:
             engine = "gemini"
-
-    # Priority 3: Offline Matrix
-    if not result:
-        result = OFFLINE_MIXES.get(key)
-        if result:
-            engine = "offline-matrix"
     if not result:
         base = transcreate(text, primary, api_key=api_key, duration_seconds=duration_seconds)
         marker = {
