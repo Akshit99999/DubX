@@ -20,6 +20,42 @@ try:
 except ImportError:
     pass
 
+import os
+import shutil
+import sys
+
+
+def _setup_ffmpeg() -> None:
+    """Ensure ffmpeg is discoverable on PATH across all environments."""
+    if shutil.which("ffmpeg"):
+        return
+    scripts_dir = os.path.join(sys.prefix, "Scripts")
+    candidate = os.path.join(scripts_dir, "ffmpeg.exe" if os.name == "nt" else "ffmpeg")
+    if os.path.isfile(candidate):
+        os.environ["PATH"] = scripts_dir + os.pathsep + os.environ.get("PATH", "")
+        return
+    try:
+        import imageio_ffmpeg
+
+        exe = imageio_ffmpeg.get_ffmpeg_exe()
+        if exe and os.path.isfile(exe):
+            exe_dir = os.path.dirname(exe)
+            alias = os.path.join(exe_dir, "ffmpeg.exe" if os.name == "nt" else "ffmpeg")
+            if not os.path.isfile(alias):
+                try:
+                    shutil.copyfile(exe, alias)
+                except OSError:
+                    pass
+            chosen = alias if os.path.isfile(alias) else exe
+            chosen_dir = os.path.dirname(chosen)
+            if chosen_dir not in os.environ.get("PATH", ""):
+                os.environ["PATH"] = chosen_dir + os.pathsep + os.environ.get("PATH", "")
+    except ImportError:
+        pass
+
+
+_setup_ffmpeg()
+
 
 VOICE_MAP = {
     "english": {
