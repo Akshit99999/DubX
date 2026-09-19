@@ -287,7 +287,54 @@ RULE 7: SYLLABLE BUDGET
 | **Proverbs** | Word-for-word nonsense in every language | **Mapped to equivalent regional proverb with same moral** |
 | **Emotional Energy** | Flattened into monotone text | **Exclamation, drama, rhetorical questions intact** |
 | **Regional Dialects** | One generic "Hindi" / "Tamil" for all contexts | **Puneri vs Mumbai Marathi, Hyderabadi vs Coastal Telugu, Chennai vs formal Tamil** |
-| **Code-Mixing** | Fails on Hinglish/Tanglish mid-sentence switches | **Natively handles bilingual vocabulary within the same sentence** |
+---
+
+### ✍️ Interactive Feature: Text Transcreator & Idiom Playground (Meaning-Preserving Engine)
+
+To allow creators, scriptwriters, and judges to experience DubX's core linguistic intelligence without uploading a video, DubX includes a dedicated **Text Transcreator & Idiom Playground**.
+
+```
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│             ✍️ DUBX TEXT TRANSCREATOR & IDIOM PLAYGROUND                         │
+│                                                                                  │
+│  Input Text: "Don't put all your eggs in one basket, the market is on fire!"      │
+│  Target: Hindi (hi) | Tone: Conversational Creator                               │
+│                                                                                  │
+│  ❌ Literal Translation (Google Translate / ElevenLabs):                          │
+│     "अपने सभी अंडे एक टोकरी में मत रखो, बाजार में आग लगी है!"                      │
+│     [Meaning: Literally burning eggs in a basket!]                               │
+│                                                                                  │
+│  🧠 Detected Metaphor & Subtext:                                                 │
+│     1. "Don't put all your eggs in one basket" ➔ Investment risk diversification  │
+│     2. "The market is on fire" ➔ High bullish trading activity                   │
+│                                                                                  │
+│  ✅ DubX Cultural Transcreation:                                                 │
+│     "सारा पैसा एक जगह मत लगाओ भाई, मार्केट में तो पूरी धूम मची है!"               │
+│                                                                                  │
+│  🔊 Instant Audio Preview: [▶ Play Dubbed Voice (hi-IN-MadhurNeural)]            │
+│  📊 Syllable Match: Source (19) ➔ Target (21) | Pacing: 1.10x (🟢 Fits Video Cut) │
+└──────────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### What This Feature Does:
+1. **Zero-Friction Ingestion:** Type or paste any phrase, slang, technical sentence, or creator script in English.
+2. **Preset "Idiom Battle" Quick-Picks:** 1-click buttons for classic phrases that break standard translators:
+   - *"Don't put all your eggs in one basket"*
+   - *"That's a steal at this price!"*
+   - *"He hit it out of the park"*
+   - *"Piece of cake"*
+   - *"Break a leg"*
+   - *"Bite the bullet"*
+3. **Triple-Output Breakdown:**
+   - **The ❌ Literal Trap:** Shows the word-for-word translation competitors generate, exposing why it sounds robotic or hilarious.
+   - **The 🧠 Subtext Analysis:** Explains what the speaker *actually means* (intent extraction).
+   - **The ✅ Cultural Transcreation:** Delivers the natural regional phrase with matching idioms and colloquial slang.
+4. **1-Click Audio Pronunciation:** Synthesizes the transcreated phrase immediately using **Microsoft Edge-TTS** or **Sarvam Bulbul**, allowing users to hear the natural prosody and pronunciation aloud in under 1 second.
+5. **3-Tier Register Alternatives:** Generates 3 versions side-by-side:
+   - *Formal / Academic* (e.g. for textbooks and formal news)
+   - *Conversational Creator* (e.g. for YouTube and podcasts)
+   - *Street Slang* (e.g. Bambaiya, Madras Bashai, Hyderabadi)
+6. **Syllable & Duration Fit Indicator:** Computes syllable counts and verifies whether the translated phrase can be spoken within the same timeframe as the original English phrase.
 
 ---
 
