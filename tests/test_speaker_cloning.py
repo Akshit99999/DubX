@@ -60,7 +60,10 @@ class TestSarvamSpeakerWorkflow(unittest.TestCase):
             job = {"job_id": "job_123", "clone_method": "sarvam-dubbing", "exports": {"audio": str(audio), "srt": str(srt)}}
             with patch("dubx_core.sarvam_dubbing_available", return_value=True), patch("dubx_core.dub_media", return_value=job) as mock_dub:
                 result = audio_to_audio_dub(str(source), "hindi", clone_voice=True, voice_clone_consent=True)
-            mock_dub.assert_called_once_with(str(source), "english", "hindi", "audio")
+            mock_dub.assert_called_once_with(
+                str(source), "english", "hindi", "audio",
+                num_speakers=-1, register="common-indic",
+            )
             self.assertTrue(result["voice_cloned"])
             self.assertEqual(result["clone_method"], "sarvam-dubbing")
             self.assertEqual(result["alignment_strategy"], "sarvam-source-timeline")
@@ -76,7 +79,10 @@ class TestSarvamSpeakerWorkflow(unittest.TestCase):
             job = {"job_id": "job_456", "clone_method": "sarvam-dubbing", "exports": {"video": str(video), "audio": str(audio), "srt": str(srt)}}
             with patch("dubx_core.sarvam_dubbing_available", return_value=True), patch("dubx_core.dub_media", return_value=job) as mock_dub:
                 result = video_to_video_dub(str(source), "tamil", clone_voice=True, voice_clone_consent=True)
-            mock_dub.assert_called_once_with(str(source), "english", "tamil", "video")
+            mock_dub.assert_called_once_with(
+                str(source), "english", "tamil", "video",
+                num_speakers=-1, register="common-indic",
+            )
             self.assertTrue(result["voice_cloned"])
             self.assertTrue(result["bgm_preserved"])
 

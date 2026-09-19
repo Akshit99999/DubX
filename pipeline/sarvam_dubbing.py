@@ -108,7 +108,8 @@ def dub_media(
     target_language: str,
     media_kind: str,
     *,
-    num_speakers: int = 1,
+    num_speakers: int = -1,
+    register: str = "auto",
     timeout_seconds: int = 3600,
     poll_seconds: int = 15,
     progress_callback: Callable[[dict[str, Any]], None] | None = None,
@@ -159,8 +160,12 @@ def dub_media(
         target_language_codes=[target_code],
         export_options=export_options,
         voice_cloning=True,
-        num_speakers=max(1, int(num_speakers)),
+        # Sarvam accepts -1 to diarize and count speakers automatically. The
+        # previous clamp silently converted it to one speaker, flattening every
+        # conversation into the first speaker's voice.
+        num_speakers=-1 if int(num_speakers) == -1 else max(1, min(10, int(num_speakers))),
         disable_watermark=True,
+        register=register,
         job_name=media.name,
     )
     job_id = created.data.job_id
@@ -259,6 +264,12 @@ def dub_media(
     missing = required - set(downloaded)
     if missing:
         raise SarvamDubbingError(f"Sarvam job {job_id} completed without usable exports: {', '.join(sorted(missing))}")
+    if "srt" in downloaded:
+        # Provider exports occasionally use two text lines for a single cue;
+        # collapse them before returning or burning captions.
+        from utils.subtitles import normalize_srt_file
+
+        normalize_srt_file(downloaded["srt"])
     report("complete", "Sarvam dubbing export is ready.", 0.98, job_id=job_id)
     return {
         "job_id": job_id,

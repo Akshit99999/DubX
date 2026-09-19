@@ -40,6 +40,16 @@ def _report(callback: ProgressCallback | None, stage: str, message: str, progres
         callback({"stage": stage, "message": message, "progress": progress})
 
 
+def _sarvam_register(dialect_level: int, code_mix_enabled: bool) -> str:
+    """Map Studio tone controls to the Sarvam Dubbing API's supported styles."""
+
+    if code_mix_enabled:
+        # Sarvam's modern-colloquial register retains natural English loanwords
+        # in Indic speech while preserving speaker-cloned audio.
+        return "modern-colloquial"
+    return {1: "formal", 2: "common-indic", 3: "modern-colloquial"}.get(dialect_level, "auto")
+
+
 def _safe_stem(value: str, fallback: str = "dubx") -> str:
     stem = re.sub(r"[^A-Za-z0-9_-]+", "_", value).strip("_")
     return stem[:60] or fallback
@@ -207,6 +217,7 @@ def audio_to_audio_dub(
     voice_clone_consent: bool = False,
     source_language: str = "english",
     dialect_level: int = 2,
+    num_speakers: int = -1,
     progress_callback: ProgressCallback | None = None,
 ) -> dict[str, Any]:
     """Mode 3: timestamped ASR, transcreation, and regional speech synthesis."""
@@ -220,7 +231,9 @@ def audio_to_audio_dub(
         if not sarvam_dubbing_available():
             raise RuntimeError("SARVAM_API_KEY is required for source-speaker cloning.")
         _report(progress_callback, "clone", "Sending audio for source-speaker dubbing…", 0.10)
-        dub_kwargs = {"progress_callback": progress_callback} if progress_callback else {}
+        dub_kwargs: dict[str, Any] = {"num_speakers": num_speakers, "register": _sarvam_register(dialect_level, False)}
+        if progress_callback:
+            dub_kwargs["progress_callback"] = progress_callback
         job = dub_media(str(source), source_language, target_language, "audio", **dub_kwargs)
         _report(progress_callback, "complete", "Dubbed audio and timed subtitles are ready.", 1.0)
         return _sarvam_audio_result(source, target_language, source_language, job)
@@ -313,6 +326,10 @@ def video_to_video_dub(
     voice_clone_consent: bool = False,
     source_language: str = "english",
     dialect_level: int = 2,
+    num_speakers: int = -1,
+    code_mix_enabled: bool = False,
+    code_mix_secondary: str = "english",
+    code_mix_intensity: int = 2,
     progress_callback: ProgressCallback | None = None,
 ) -> dict[str, Any]:
     """Mode 4/5: preserve video frames, create a dual-track dub, and optionally burn captions."""
@@ -329,7 +346,15 @@ def video_to_video_dub(
         if not sarvam_dubbing_available():
             raise RuntimeError("SARVAM_API_KEY is required for source-speaker cloning.")
         _report(progress_callback, "clone", "Uploading video for source-speaker dubbing…", 0.35)
-        dub_kwargs = {"progress_callback": progress_callback} if progress_callback else {}
+        # Dubbing jobs preserve source identity; the provider's colloquial
+        # register is the compatible way to request a natural mixed-language
+        # delivery without replacing speakers with a preset TTS voice.
+        dub_kwargs: dict[str, Any] = {
+            "num_speakers": num_speakers,
+            "register": _sarvam_register(dialect_level, code_mix_enabled),
+        }
+        if progress_callback:
+            dub_kwargs["progress_callback"] = progress_callback
         job = dub_media(str(source), source_language, target_language, "video", **dub_kwargs)
         exports = job["exports"]
         final_video = exports["video"]
@@ -363,6 +388,13 @@ def video_to_video_dub(
             "detected_gender": None,
             "gender_used": "source-speaker",
             "source_language": source_language,
+            "speaker_count": num_speakers,
+            "code_mix": {
+                "enabled": code_mix_enabled,
+                "secondary_language": code_mix_secondary if code_mix_enabled else None,
+                "intensity": int(code_mix_intensity) if code_mix_enabled else None,
+                "register": dub_kwargs["register"],
+            },
             "sarvam_job_id": job["job_id"],
             "alignment_strategy": "sarvam-source-timeline",
         }
@@ -498,6 +530,7 @@ def main() -> None:
     parser.add_argument("--output", default=None)
     parser.add_argument("--caption", action="store_true", help="Burn captions for v2v")
     parser.add_argument("--rate", default="+0%")
+    parser.add_argument("--speakers", type=int, default=-1, choices=[-1, *range(1, 11)], help="-1 auto-detects speakers; otherwise set 1-10")
     parser.add_argument("--dialect", type=int, default=2, choices=[1, 2, 3], help="1=formal, 2=conversational, 3=street slang")
     parser.add_argument("--primary", default="hindi", choices=sorted(VOICE_MAP), help="Primary language for --mode mix")
     parser.add_argument("--secondary", default="english", choices=sorted(VOICE_MAP), help="Secondary language for --mode mix")
@@ -512,9 +545,9 @@ def main() -> None:
     elif args.mode == "t2a":
         result = text_to_audio_dub(args.input, args.lang, args.gender, args.output, rate=args.rate, dialect_level=args.dialect)
     elif args.mode == "a2a":
-        result = audio_to_audio_dub(args.input, args.lang, args.gender, args.output, rate=args.rate, clone_voice=args.clone_speaker, voice_clone_consent=args.confirm_voice_consent, source_language=args.source_lang, dialect_level=args.dialect)
+        result = audio_to_audio_dub(args.input, args.lang, args.gender, args.output, rate=args.rate, clone_voice=args.clone_speaker, voice_clone_consent=args.confirm_voice_consent, source_language=args.source_lang, dialect_level=args.dialect, num_speakers=args.speakers)
     else:
-        result = video_to_video_dub(args.input, args.lang, args.gender, args.output, burn_subtitles=args.mode == "v2v_caption" or args.caption, rate=args.rate, clone_voice=args.clone_speaker, voice_clone_consent=args.confirm_voice_consent, source_language=args.source_lang, dialect_level=args.dialect)
+        result = video_to_video_dub(args.input, args.lang, args.gender, args.output, burn_subtitles=args.mode == "v2v_caption" or args.caption, rate=args.rate, clone_voice=args.clone_speaker, voice_clone_consent=args.confirm_voice_consent, source_language=args.source_lang, dialect_level=args.dialect, num_speakers=args.speakers)
     print("\n" + "=" * 72)
     print("DUBX ENGINE COMPLETE")
     _print_result(result)

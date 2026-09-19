@@ -1,9 +1,11 @@
 import unittest
+import tempfile
+from pathlib import Path
 from unittest.mock import patch
 
 from dubx_core import dual_language_code_mix, text_to_text_dub
 from pipeline.transcreation import transcreate_batch
-from utils.subtitles import SubtitleSegment, format_srt, format_vtt
+from utils.subtitles import SubtitleSegment, format_srt, format_vtt, normalize_srt_file
 from utils.syllable_budget import budget_for, count_syllables
 
 
@@ -28,6 +30,18 @@ class DubXOfflineTests(unittest.TestCase):
         segments = [SubtitleSegment(0, 1.25, "Hello", "नमस्ते")]
         self.assertIn("00:00:00,000 --> 00:00:01,250", format_srt(segments))
         self.assertTrue(format_vtt(segments).startswith("WEBVTT"))
+
+    def test_subtitle_cues_are_single_line(self):
+        segment = SubtitleSegment(0, 1, "Hello\nthere", "नमस्ते\nदोस्त")
+        self.assertEqual(segment.text, "Hello there")
+        self.assertEqual(segment.translated_text, "नमस्ते दोस्त")
+
+    def test_existing_srt_cues_are_normalized_to_one_line(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "source.srt"
+            path.write_text("1\n00:00:00,000 --> 00:00:01,000\nनमस्ते\nदोस्त\n", encoding="utf-8")
+            normalize_srt_file(path)
+            self.assertIn("नमस्ते दोस्त", path.read_text(encoding="utf-8"))
 
     def test_dynamic_code_mix_matrix(self):
         result = dual_language_code_mix(

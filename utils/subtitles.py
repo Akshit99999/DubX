@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -16,8 +17,11 @@ class SubtitleSegment:
     def __post_init__(self) -> None:
         self.start = max(0.0, float(self.start))
         self.end = max(self.start + 0.1, float(self.end))
-        self.text = str(self.text).strip()
-        self.translated_text = str(self.translated_text or "").strip()
+        # A single cue should be readable as a conventional one-line subtitle;
+        # line feeds from an ASR/translation provider otherwise make libass
+        # create a tall caption block over the video.
+        self.text = re.sub(r"\s+", " ", str(self.text)).strip()
+        self.translated_text = re.sub(r"\s+", " ", str(self.translated_text or "")).strip()
 
 
 def _timestamp(seconds: float, separator: str) -> str:
@@ -63,3 +67,19 @@ def write_subtitles(segments: list[SubtitleSegment], srt_path: str, vtt_path: st
         with open(vtt_path, "w", encoding="utf-8", newline="\n") as handle:
             handle.write(format_vtt(segments, bilingual=bilingual))
     return srt_path, vtt_path
+
+
+def normalize_srt_file(path: str | Path) -> str:
+    """Collapse each existing SRT cue to one readable subtitle line in place."""
+
+    subtitle_path = Path(path)
+    blocks = re.split(r"\r?\n\s*\r?\n", subtitle_path.read_text(encoding="utf-8", errors="replace").strip())
+    normalized: list[str] = []
+    for block in blocks:
+        lines = [line.strip() for line in block.splitlines() if line.strip()]
+        if len(lines) < 3 or "-->" not in lines[1]:
+            normalized.append("\n".join(lines))
+            continue
+        normalized.append("\n".join([lines[0], lines[1], re.sub(r"\s+", " ", " ".join(lines[2:])).strip()]))
+    subtitle_path.write_text("\n\n".join(block for block in normalized if block) + "\n", encoding="utf-8", newline="\n")
+    return str(subtitle_path)
