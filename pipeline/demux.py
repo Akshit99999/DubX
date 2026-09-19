@@ -51,10 +51,15 @@ def require_ffmpeg() -> None:
         raise RuntimeError("FFmpeg was not found on PATH. Install FFmpeg before processing audio/video.")
 
 
-def extract_audio(video_path: str, output_path: str) -> str:
+def extract_audio(video_path: str, output_path: str, sample_rate: int = 16000, mono: bool = True) -> str:
     require_ffmpeg()
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-    subprocess.run(["ffmpeg", "-y", "-i", video_path, "-vn", "-acodec", "pcm_s16le", "-ar", "44100", "-ac", "2", output_path], check=True, capture_output=True)
+    channels = ["-ac", "1"] if mono else ["-ac", "2"]
+    subprocess.run(
+        ["ffmpeg", "-y", "-i", video_path, "-vn", "-acodec", "pcm_s16le", "-ar", str(sample_rate)] + channels + [output_path],
+        check=True,
+        capture_output=True,
+    )
     return output_path
 
 

@@ -66,5 +66,5 @@ def burn_captions(source_video: str, dubbed_audio: str, subtitle_path: str, outp
     clean_sub = re.sub(r"^([a-zA-Z]):/", r"\1\\:/", clean_sub)
     clean_sub = clean_sub.replace("'", "\\'")
     vf = f"subtitles='{clean_sub}':force_style='FontSize=20,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=3,MarginV=30'"
-    _run(["ffmpeg", "-y", "-i", source_video, "-i", dubbed_audio, "-vf", vf, "-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-c:a", "aac", "-b:a", "192k", "-map", "0:v:0", "-map", "1:a:0", output_video])
+    _run(["ffmpeg", "-y", "-i", source_video, "-i", dubbed_audio, "-vf", vf, "-c:v", "libx264", "-preset", "ultrafast", "-crf", "22", "-c:a", "aac", "-b:a", "192k", "-map", "0:v:0", "-map", "1:a:0", output_video])
     return output_video

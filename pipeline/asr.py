@@ -9,14 +9,24 @@ from typing import Any
 from utils.subtitles import SubtitleSegment
 
 
+_groq_client: Any = None
+
+
+def _get_groq_client(api_key: str):
+    global _groq_client
+    if _groq_client is None:
+        from groq import Groq
+
+        _groq_client = Groq(api_key=api_key)
+    return _groq_client
+
+
 def _groq(audio_path: str, api_key: str | None) -> list[SubtitleSegment] | None:
     key = api_key or os.getenv("GROQ_API_KEY")
     if not key:
         return None
     try:
-        from groq import Groq
-
-        client = Groq(api_key=key)
+        client = _get_groq_client(key)
         with open(audio_path, "rb") as handle:
             response = client.audio.transcriptions.create(
                 file=(os.path.basename(audio_path), handle.read()),

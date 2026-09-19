@@ -107,31 +107,10 @@ def text_to_audio_dub(text: str, target_language: str = "hindi", gender: str = "
 
 
 def _translated_segments(segments: list[SubtitleSegment], target_language: str, api_key: str | None, dialect_level: int = 2) -> tuple[list[SubtitleSegment], str]:
-    # ASR can split a single sentence into several timestamped fragments. Supply
-    # the full dialogue to each transcreation call so pronouns, jokes, and tone
-    # survive those boundaries while the segment's own duration still controls
-    # the spoken-length budget and subtitle timing.
-    import concurrent.futures
+    """Transcreate all dialogue segments in a single fast batch pass with cache and fallback."""
+    from pipeline.transcreation import transcreate_batch
 
-    context = " ".join(segment.text.strip() for segment in segments if segment.text.strip())
-
-    def _translate_one(seg: SubtitleSegment) -> SubtitleSegment:
-        result = transcreate(
-            seg.text,
-            target_language,
-            api_key=api_key,
-            duration_seconds=max(0.1, seg.end - seg.start),
-            dialect_level=dialect_level,
-            context=context,
-        )
-        return SubtitleSegment(seg.start, seg.end, seg.text, result["transcreated_text"])
-
-    if len(segments) <= 1:
-        translated = [_translate_one(seg) for seg in segments]
-    else:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, len(segments))) as executor:
-            translated = list(executor.map(_translate_one, segments))
-
+    translated = transcreate_batch(segments, target_language, api_key=api_key, dialect_level=dialect_level)
     return translated, " ".join(item.translated_text for item in translated).strip()
 
 

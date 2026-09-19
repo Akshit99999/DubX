@@ -81,6 +81,19 @@ def _decode_wav_payload(payload: Any) -> bytes:
     return raw
 
 
+_sarvam_client: Any = None
+_TTS_CACHE: dict[tuple[str, str, str, str], bytes] = {}
+
+
+def _get_sarvam_client(api_key: str):
+    global _sarvam_client
+    if _sarvam_client is None:
+        from sarvamai import SarvamAI
+
+        _sarvam_client = SarvamAI(api_subscription_key=api_key)
+    return _sarvam_client
+
+
 def synthesize(
     text: str,
     language: str,
@@ -117,13 +130,29 @@ def synthesize(
             "SARVAM_API_KEY is required for speech synthesis. Edge-TTS has been removed."
         )
 
-    try:
-        from sarvamai import SarvamAI
+    speaker = os.getenv("DUBX_SARVAM_SPEAKER", "").strip() or None
+    if not speaker:
+        # Map gender to natural Sarvam Bulbul preset voices
+        speaker = "anushka" if gender == "female" else "aditya"
 
-        speaker = os.getenv("DUBX_SARVAM_SPEAKER", "").strip() or None
-        if not speaker:
-            # Map gender to natural Sarvam Bulbul preset voices
-            speaker = "anushka" if gender == "female" else "aditya"
+    cache_key = (text[:2500], language.lower(), speaker, rate)
+    if cache_key in _TTS_CACHE:
+        _write_atomic(destination, _TTS_CACHE[cache_key])
+        return {
+            "output_path": str(destination),
+            "voice_used": f"sarvam:{speaker}",
+            "cloned_voice": False,
+            "clone_method": "none",
+            "backend": "sarvam-bulbul:v3",
+            "gender_used": gender,
+            "detected_gender": None,
+            "f0_hz": None,
+            "speaker_f0_hz": None,
+            "pitch_offset": None,
+        }
+
+    try:
+        client = _get_sarvam_client(sarvam_key)
 
         request: dict[str, Any] = {
             "text": text[:2500],
@@ -136,11 +165,12 @@ def synthesize(
             "temperature": 0.45,
         }
 
-        response = SarvamAI(api_subscription_key=sarvam_key).text_to_speech.convert(**request)
+        response = client.text_to_speech.convert(**request)
         audios = _response_value(response, "audios")
         if not audios:
             raise RuntimeError("Sarvam Bulbul returned no audio")
         audio_bytes = _decode_wav_payload(audios[0])
+        _TTS_CACHE[cache_key] = audio_bytes
         _write_atomic(destination, audio_bytes)
         return {
             "output_path": str(destination),

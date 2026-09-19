@@ -95,6 +95,39 @@ pronouns, tone, callbacks, ambiguity, and sentence fragments from it, but transl
 only the requested line. Keep the result within the supplied syllable budget. Return
 strict JSON with only detected_intent, transcreated_text, and explanation."""
 
+BATCH_SYSTEM_PROMPT = """You are an expert Indian dubbing director and transcreator.
+Never translate word-for-word. Preserve intent, emotional energy, humour, sarcasm,
+metaphors, rhetorical pauses, named entities, numbers, units, URLs, and modern loan
+words. Use natural spoken {language} in a {register} register. Do not invent facts,
+omit safety-critical qualifications, or add explanations to the spoken lines.
+You will receive a JSON object with dialogue segments. Each segment has an "id", "text",
+and "target_syllables". Transcreate each segment into natural spoken {language} within budget.
+Return a strict JSON object with a single key "segments": an array of objects, where each object has:
+- "id": integer id matching the input segment
+- "transcreated_text": string localized translation
+"""
+
+_session: Any = None
+_TRANSCREATION_CACHE: dict[tuple[str, str, int], dict[str, Any]] = {}
+
+
+def _get_session():
+    global _session
+    if _session is None:
+        import requests
+        from requests.adapters import HTTPAdapter
+        from urllib3.util.retry import Retry
+
+        _session = requests.Session()
+        adapter = HTTPAdapter(
+            pool_connections=10,
+            pool_maxsize=20,
+            max_retries=Retry(total=1, backoff_factor=0.2),
+        )
+        _session.mount("https://", adapter)
+        _session.mount("http://", adapter)
+    return _session
+
 
 def _normalise(text: str) -> str:
     cleaned = text.replace("’", "'").replace("‘", "'").replace('"', "").replace('"', "")
@@ -106,8 +139,7 @@ def _astra(text: str, language: str, budget: SyllableBudget | None, api_key: str
     if not key or os.getenv("DUBX_OFFLINE_MODE") == "1":
         return None
     try:
-        import requests
-
+        session = _get_session()
         url = "https://routellm.abacus.ai/v1/chat/completions"
         headers = {
             "Authorization": f"Bearer {key}",
@@ -125,7 +157,7 @@ def _astra(text: str, language: str, budget: SyllableBudget | None, api_key: str
             "response_format": {"type": "json_object"},
             "temperature": 0.3,
         }
-        resp = requests.post(url, headers=headers, json=payload, timeout=20)
+        resp = session.post(url, headers=headers, json=payload, timeout=20)
         if resp.status_code != 200:
             print(f"[DubX] Astra 6 API error ({resp.status_code}): {resp.text[:200]}")
             return None
@@ -144,6 +176,57 @@ def _astra(text: str, language: str, budget: SyllableBudget | None, api_key: str
         return None
     except Exception as exc:
         print(f"[DubX] Astra 6 unavailable; falling back: {exc}")
+        return None
+
+
+def _astra_batch(
+    items: list[dict[str, Any]],
+    language: str,
+    api_key: str | None,
+    register: str,
+) -> dict[int, str] | None:
+    key = api_key or os.getenv("ASTRA_API_KEY") or os.getenv("ABACUS_API_KEY")
+    if not key or os.getenv("DUBX_OFFLINE_MODE") == "1":
+        return None
+    try:
+        session = _get_session()
+        url = "https://routellm.abacus.ai/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+        }
+        model = os.getenv("ASTRA_MODEL", "gpt-6-astra")
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": BATCH_SYSTEM_PROMPT.format(language=language, register=register)},
+                {"role": "user", "content": json.dumps({"segments": items}, ensure_ascii=False)},
+            ],
+            "response_format": {"type": "json_object"},
+            "temperature": 0.3,
+        }
+        resp = session.post(url, headers=headers, json=payload, timeout=30)
+        if resp.status_code != 200:
+            print(f"[DubX] Astra 6 batch error ({resp.status_code}): {resp.text[:200]}")
+            return None
+        data = resp.json()
+        choices = data.get("choices", [])
+        if not choices:
+            return None
+        content = choices[0].get("message", {}).get("content", "")
+        if not content:
+            return None
+        cleaned_json = re.sub(r"^```(?:json)?\s*", "", content.strip(), flags=re.IGNORECASE)
+        cleaned_json = re.sub(r"\s*```$", "", cleaned_json.strip())
+        parsed = json.loads(cleaned_json)
+        segments_out = parsed.get("segments", [])
+        result: dict[int, str] = {}
+        for s in segments_out:
+            if isinstance(s, dict) and "id" in s and "transcreated_text" in s:
+                result[int(s["id"])] = str(s["transcreated_text"]).strip()
+        return result or None
+    except Exception as exc:
+        print(f"[DubX] Astra 6 batch unavailable; falling back: {exc}")
         return None
 
 
@@ -178,12 +261,56 @@ def _gemini(text: str, language: str, budget: SyllableBudget | None, api_key: st
             return None
         return data
     except Exception as exc:
-        # Avoid hammering a quota-limited key once a provider asks us to wait.
         if "RESOURCE_EXHAUSTED" in str(exc) or "429" in str(exc):
             _GEMINI_RETRY_AFTER = time.monotonic() + 60
             print("[DubX] Gemini quota is unavailable; using offline transcreation for 60 seconds.")
         else:
             print(f"[DubX] Gemini unavailable; using offline transcreation: {exc}")
+        return None
+
+
+def _gemini_batch(
+    items: list[dict[str, Any]],
+    language: str,
+    api_key: str | None,
+    register: str,
+) -> dict[int, str] | None:
+    global _GEMINI_RETRY_AFTER
+    key = api_key or os.getenv("GEMINI_API_KEY")
+    if not key or os.getenv("DUBX_OFFLINE_MODE") == "1" or time.monotonic() < _GEMINI_RETRY_AFTER:
+        return None
+    try:
+        from google import genai
+        from google.genai import types
+
+        client = genai.Client(api_key=key)
+        response = client.models.generate_content(
+            model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
+            contents=json.dumps({"segments": items}, ensure_ascii=False),
+            config=types.GenerateContentConfig(
+                system_instruction=BATCH_SYSTEM_PROMPT.format(language=language, register=register),
+                response_mime_type="application/json",
+                temperature=0.3,
+            ),
+        )
+        raw_text = getattr(response, "text", None)
+        if not raw_text:
+            return None
+        cleaned_json = re.sub(r"^```(?:json)?\s*", "", raw_text.strip(), flags=re.IGNORECASE)
+        cleaned_json = re.sub(r"\s*```$", "", cleaned_json.strip())
+        parsed = json.loads(cleaned_json)
+        segments_out = parsed.get("segments", [])
+        result: dict[int, str] = {}
+        for s in segments_out:
+            if isinstance(s, dict) and "id" in s and "transcreated_text" in s:
+                result[int(s["id"])] = str(s["transcreated_text"]).strip()
+        return result or None
+    except Exception as exc:
+        if "RESOURCE_EXHAUSTED" in str(exc) or "429" in str(exc):
+            _GEMINI_RETRY_AFTER = time.monotonic() + 60
+            print("[DubX] Gemini quota is unavailable; using offline transcreation for 60 seconds.")
+        else:
+            print(f"[DubX] Gemini batch unavailable: {exc}")
         return None
 
 
@@ -204,7 +331,7 @@ def transcreate(
     register = {1: "clear professional", 2: "warm conversational", 3: "natural youth slang"}[dialect_level]
     budget = budget_for(text, duration_seconds) if duration_seconds is not None else None
 
-    # Priority 1: Curated cultural idiom matches
+    # Priority 1: Curated cultural idiom matches (0ms)
     entry = OFFLINE_IDIOMS.get(_normalise(text))
     if entry:
         output = entry.get(lang_key, entry.get("hindi", text))
@@ -220,11 +347,19 @@ def transcreate(
             "register": register,
         }
 
-    # Priority 2: Astra 6 (GPT-6 Astra via Abacus.AI RouteLLM)
+    # Priority 2: In-memory cache (0ms)
+    cache_key = (_normalise(text), lang_key, dialect_level)
+    if cache_key in _TRANSCREATION_CACHE:
+        cached = dict(_TRANSCREATION_CACHE[cache_key])
+        if budget and budget_for(cached["transcreated_text"], budget.duration_seconds).status == "overflow":
+            cached["transcreated_text"] = trim_to_budget(cached["transcreated_text"], budget.target_syllables)
+        return cached
+
+    # Priority 3: Astra 6 (GPT-6 Astra via Abacus.AI RouteLLM)
     online = _astra(text, config["name"], budget, api_key, register, context)
     engine_name = "astra-6"
 
-    # Priority 3: Gemini
+    # Priority 4: Gemini
     if not online:
         online = _gemini(text, config["name"], budget, api_key, register, context)
         engine_name = "gemini"
@@ -233,7 +368,7 @@ def transcreate(
         output = online.get("transcreated_text", text)
         if budget and budget_for(output, budget.duration_seconds).status == "overflow":
             output = trim_to_budget(output, budget.target_syllables)
-        return {
+        result = {
             "original_text": text,
             "detected_intent": online.get("detected_intent", "Preserved contextual meaning"),
             "transcreated_text": output,
@@ -242,28 +377,111 @@ def transcreate(
             "engine": engine_name,
             "register": register,
         }
-
-    entry = OFFLINE_IDIOMS.get(_normalise(text))
-    if entry:
-        output = entry.get(lang_key, entry.get("hindi", text))
-        if budget and budget_for(output, budget.duration_seconds).status == "overflow":
-            output = trim_to_budget(output, budget.target_syllables)
-        return {
-            "original_text": text,
-            "detected_intent": entry["meaning"],
-            "transcreated_text": output,
-            "explanation": f"Matched cultural equivalent for {config['name']}.",
-            "budget": budget,
-            "engine": "offline-idiom",
-            "register": register,
-        }
+        _TRANSCREATION_CACHE[cache_key] = result
+        return result
 
     return {
         "original_text": text,
         "detected_intent": "General conversational statement",
         "transcreated_text": text,
-        "explanation": "No offline idiom match; set GEMINI_API_KEY for LLM transcreation.",
+        "explanation": "No offline idiom match; set ASTRA_API_KEY or GEMINI_API_KEY for LLM transcreation.",
         "budget": budget,
         "engine": "offline-pass-through",
         "register": register,
     }
+
+
+def transcreate_batch(
+    segments: list[SubtitleSegment],
+    target_language: str = "hindi",
+    api_key: str | None = None,
+    dialect_level: int = 2,
+) -> list[SubtitleSegment]:
+    """Transcreate a list of SubtitleSegments in a single fast batch call."""
+    if not segments:
+        return []
+
+    config = language_config(target_language)
+    lang_key = target_language.lower()
+    if dialect_level not in {1, 2, 3}:
+        dialect_level = 2
+    register = {1: "clear professional", 2: "warm conversational", 3: "natural youth slang"}[dialect_level]
+
+    results: list[SubtitleSegment] = []
+    to_translate_indices: list[int] = []
+    batch_items: list[dict[str, Any]] = []
+
+    for i, seg in enumerate(segments):
+        text = seg.text.strip()
+        duration = max(0.1, seg.end - seg.start)
+        budget = budget_for(text, duration)
+        norm_key = _normalise(text)
+
+        # Check offline idioms first (instant 0ms)
+        if norm_key in OFFLINE_IDIOMS:
+            out_text = OFFLINE_IDIOMS[norm_key].get(lang_key, OFFLINE_IDIOMS[norm_key].get("hindi", text))
+            if budget and budget_for(out_text, duration).status == "overflow":
+                out_text = trim_to_budget(out_text, budget.target_syllables)
+            results.append(SubtitleSegment(seg.start, seg.end, text, out_text))
+            continue
+
+        # Check cache (instant 0ms)
+        cache_key = (norm_key, lang_key, dialect_level)
+        if cache_key in _TRANSCREATION_CACHE:
+            out_text = _TRANSCREATION_CACHE[cache_key]["transcreated_text"]
+            if budget and budget_for(out_text, duration).status == "overflow":
+                out_text = trim_to_budget(out_text, budget.target_syllables)
+            results.append(SubtitleSegment(seg.start, seg.end, text, out_text))
+            continue
+
+        # Needs translation
+        results.append(SubtitleSegment(seg.start, seg.end, text, ""))
+        to_translate_indices.append(i)
+        batch_items.append({
+            "id": i,
+            "text": text,
+            "target_syllables": budget.target_syllables,
+        })
+
+    if not batch_items:
+        return results
+
+    # Attempt Astra 6 batch first
+    batch_res = _astra_batch(batch_items, config["name"], api_key, register)
+    if not batch_res:
+        # Fall back to Gemini batch
+        batch_res = _gemini_batch(batch_items, config["name"], api_key, register)
+
+    context = " ".join(seg.text.strip() for seg in segments if seg.text.strip())
+
+    for idx in to_translate_indices:
+        seg = results[idx]
+        trans_text = batch_res.get(idx) if batch_res else None
+        if trans_text:
+            duration = max(0.1, seg.end - seg.start)
+            budget = budget_for(seg.text, duration)
+            if budget and budget_for(trans_text, duration).status == "overflow":
+                trans_text = trim_to_budget(trans_text, budget.target_syllables)
+            results[idx] = SubtitleSegment(seg.start, seg.end, seg.text, trans_text)
+            _TRANSCREATION_CACHE[(_normalise(seg.text), lang_key, dialect_level)] = {
+                "original_text": seg.text,
+                "detected_intent": "Preserved contextual meaning",
+                "transcreated_text": trans_text,
+                "explanation": "Batch transcreation",
+                "budget": budget,
+                "engine": "astra-6-batch",
+                "register": register,
+            }
+        else:
+            # Fallback to single transcreate for missing item
+            single = transcreate(
+                seg.text,
+                target_language=target_language,
+                api_key=api_key,
+                duration_seconds=max(0.1, seg.end - seg.start),
+                dialect_level=dialect_level,
+                context=context,
+            )
+            results[idx] = SubtitleSegment(seg.start, seg.end, seg.text, single["transcreated_text"])
+
+    return results
