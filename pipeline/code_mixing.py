@@ -85,7 +85,7 @@ def _gemini_mix(text: str, primary: str, secondary: str, intensity: int, script:
             f"Script preference: {script}\n\nText: {text}"
         )
         response = client.models.generate_content(
-            model=os.getenv("GEMINI_MODEL", "gemini-1.5-flash"),
+            model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
             contents=prompt,
             config=types.GenerateContentConfig(
                 system_instruction=(

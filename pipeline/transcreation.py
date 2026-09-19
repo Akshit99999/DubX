@@ -104,7 +104,7 @@ def _gemini(text: str, language: str, budget: SyllableBudget | None, api_key: st
         client = genai.Client(api_key=key)
         budget_text = f"Target syllables: {budget.target_syllables}." if budget else ""
         response = client.models.generate_content(
-            model=os.getenv("GEMINI_MODEL", "gemini-1.5-flash"),
+            model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
             contents=f"{budget_text}\nTranscreate this text:\n{text}",
             config=types.GenerateContentConfig(
                 system_instruction=SYSTEM_PROMPT.format(language=language),

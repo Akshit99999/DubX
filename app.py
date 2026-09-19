@@ -136,23 +136,47 @@ def build_app():
             live_run.click(process_live, [live_input, live_language, live_gender], [live_output, live_text])
 
         with gr.Tab("📝 Text demo"):
-            text_input = gr.Textbox(value="Don't put all your eggs in one basket", label="English text")
-            text_language = gr.Dropdown(languages, value="hindi", label="Target language")
-            text_run = gr.Button("Transcreate")
-            text_output = gr.JSON(label="Result")
-            text_run.click(lambda text, language: text_to_text_dub(text, language), [text_input, text_language], text_output)
+            with gr.Row():
+                with gr.Column():
+                    text_input = gr.Textbox(value="Don't put all your eggs in one basket", label="English text", lines=3)
+                    text_language = gr.Dropdown(languages, value="hindi", label="Target language")
+                    text_run = gr.Button("Transcreate", variant="primary")
+                with gr.Column():
+                    transcreated_text = gr.Textbox(label="Transcreated text", lines=2)
+                    detected_intent = gr.Textbox(label="Detected cultural meaning / intent", lines=2)
+                    explanation = gr.Textbox(label="Cultural translation rationale", lines=2)
+                    with gr.Accordion("Developer details & raw JSON", open=False):
+                        text_output = gr.JSON(label="Full Payload")
+
+            def _handle_text_dub(text, lang):
+                res = text_to_text_dub(text, lang)
+                return res["transcreated_text"], res["detected_intent"], res["explanation"], res
+
+            text_run.click(_handle_text_dub, [text_input, text_language], [transcreated_text, detected_intent, explanation, text_output])
 
         with gr.Tab("🌐 Code-mix matrix"):
             gr.Markdown("Blend any two languages with a controllable vernacular intensity and native/romanized output.")
-            mix_input = gr.Textbox(value="Don't put all your eggs in one basket", label="English source text")
             with gr.Row():
-                mix_primary = gr.Dropdown(matrix_languages, value="hindi", label="Primary language (A)")
-                mix_secondary = gr.Dropdown(matrix_languages, value="punjabi", label="Secondary language (B)")
-                mix_intensity = gr.Slider(1, 3, value=2, step=1, label="Code-mixing intensity", info="1: 15% · 2: 30% · 3: 50% secondary language")
-                mix_script = gr.Dropdown(["native", "romanized", "dual"], value="native", label="Script output")
-            mix_run = gr.Button("Generate blended dubbing text", variant="primary")
-            mix_output = gr.JSON(label="Dual-language result")
-            mix_run.click(dual_language_code_mix, [mix_input, mix_primary, mix_secondary, mix_intensity, mix_script], mix_output)
+                with gr.Column():
+                    mix_input = gr.Textbox(value="Don't put all your eggs in one basket", label="English source text", lines=3)
+                    with gr.Row():
+                        mix_primary = gr.Dropdown(matrix_languages, value="hindi", label="Primary language (A)")
+                        mix_secondary = gr.Dropdown(matrix_languages, value="punjabi", label="Secondary language (B)")
+                    with gr.Row():
+                        mix_intensity = gr.Slider(1, 3, value=2, step=1, label="Code-mixing intensity", info="1: 15% · 2: 30% · 3: 50% secondary language")
+                        mix_script = gr.Dropdown(["native", "romanized", "dual"], value="native", label="Script output")
+                    mix_run = gr.Button("Generate blended dubbing text", variant="primary")
+                with gr.Column():
+                    blended_output = gr.Textbox(label="Blended dubbing text", lines=2)
+                    blended_style = gr.Textbox(label="Style & dialect pair", lines=1)
+                    with gr.Accordion("Developer details & raw JSON", open=False):
+                        mix_output = gr.JSON(label="Full Payload")
+
+            def _handle_mix(text, prim, sec, intensity, script):
+                res = dual_language_code_mix(text, prim, sec, intensity, script)
+                return res["transcreated_text"], res.get("style", f"{prim} + {sec}"), res
+
+            mix_run.click(_handle_mix, [mix_input, mix_primary, mix_secondary, mix_intensity, mix_script], [blended_output, blended_style, mix_output])
     return demo
 
 
