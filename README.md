@@ -153,9 +153,9 @@ Install the Python integrations with `pip install -r requirements.txt`, install 
 
 DubX does not use Edge-TTS. Text-to-audio uses Sarvam Bulbul v3 with a clearly labelled preset voice. Audio/video dubbing defaults to that same preset mode, so it does not claim the output is the original speaker.
 
-To preserve a source speaker’s vocal identity, explicitly choose **Clone original speaker with Sarvam** in the app and confirm that you have the right to clone that voice. The Sarvam Dubbing workflow then returns a source-timeline-aligned dubbed track, subtitles, and—when the source is video—a dubbed video. This opt-in is limited to audio/video inputs; text-only input has no source voice to clone.
+The Studio defaults to **Clone original speaker with Sarvam** for audio and video, because it is the only mode that can preserve the source speaker across languages. You must still confirm that you have the right to clone that voice before processing starts. The Sarvam Dubbing workflow returns a source-timeline-aligned dubbed track, translated `.srt`, and—when the source is video—a dubbed video. When captions are enabled (the Studio default), that same Sarvam-aligned subtitle file is burned into the exported video. This opt-in is limited to audio/video inputs; text-only input has no source voice to clone.
 
-Gemini transcreation is register-aware (formal, conversational, or street slang) and is instructed to preserve named entities, numbers, units, URLs, punctuation, cultural intent, and timing budget without adding invented facts or spoken explanations.
+Gemini transcreation is register-aware (formal, conversational, or street slang), sees the surrounding ASR dialogue for each timestamped line, and is instructed to preserve named entities, numbers, units, URLs, punctuation, cultural intent, and timing budget without adding invented facts or spoken explanations. This is context-aware transcreation, not direct word-for-word translation.
 If Gemini reaches a provider quota, DubX pauses further Gemini attempts briefly and uses its deterministic offline idiom/code-mix fallback rather than repeatedly failing the request.
 
 The offline text demo needs no API key:
@@ -172,6 +172,8 @@ Run the web studio with:
 ```bash
 python app.py
 ```
+
+Studio mode accepts a local upload/recording or a YouTube URL. DubX downloads a single video with `yt-dlp`; only download material you are allowed to process.
 
 Run the offline verification suite with:
 

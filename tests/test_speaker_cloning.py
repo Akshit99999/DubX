@@ -75,6 +75,20 @@ class TestSarvamSpeakerWorkflow(unittest.TestCase):
             self.assertTrue(result["voice_cloned"])
             self.assertTrue(result["bgm_preserved"])
 
+    def test_video_clone_burns_sarvam_aligned_captions(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "speaker.mp4"
+            source.write_bytes(b"fake-video")
+            video = Path(directory) / "dub.mp4"
+            audio = Path(directory) / "dub.wav"
+            srt = Path(directory) / "dub.srt"
+            srt.write_text("1\n00:00:00,000 --> 00:00:01,000\nவணக்கம்\n", encoding="utf-8")
+            job = {"job_id": "job_789", "clone_method": "sarvam-dubbing", "exports": {"video": str(video), "audio": str(audio), "srt": str(srt)}}
+            with patch("dubx_core.sarvam_dubbing_available", return_value=True), patch("dubx_core.dub_media", return_value=job), patch("dubx_core.burn_captions", return_value=str(video)) as mock_burn:
+                result = video_to_video_dub(str(source), "tamil", clone_voice=True, voice_clone_consent=True, burn_subtitles=True)
+            mock_burn.assert_called_once()
+            self.assertTrue(result["burned_captions"])
+
 
 if __name__ == "__main__":
     unittest.main()

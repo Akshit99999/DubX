@@ -153,14 +153,14 @@ def build_app():
             with gr.Row():
                 with gr.Column():
                     video_file = gr.Video(label="Upload or record video", sources=["upload", "webcam"])
-                    video_url = gr.Textbox(label="Or paste a video URL", placeholder="https://...")
+                    video_url = gr.Textbox(label="Or paste a YouTube/video URL", placeholder="https://www.youtube.com/watch?v=...")
                     language = gr.Dropdown(languages, value="hindi", label="Target language")
                     source_language = gr.Dropdown(matrix_languages, value="english", label="Source language")
-                    voice_mode = gr.Radio(["Sarvam preset voice", "Clone original speaker with Sarvam"], value="Sarvam preset voice", label="Voice mode")
+                    voice_mode = gr.Radio(["Sarvam preset voice", "Clone original speaker with Sarvam"], value="Clone original speaker with Sarvam", label="Voice mode", info="Best source-speaker match. You must confirm you have permission below.")
                     voice_clone_consent = gr.Checkbox(label="I have permission to clone and use this speaker's voice", value=False)
                     gender = gr.Radio(["auto", "male", "female"], value="auto", label="Voice / Gender", info="auto detects speaker gender")
                     dialect = gr.Slider(1, 3, value=2, step=1, label="Dialect / register", info="1 formal · 2 conversational · 3 street slang")
-                    burn = gr.Checkbox(label="Burn regional captions into the video", value=False)
+                    burn = gr.Checkbox(label="Burn translated captions aligned to the dubbed audio", value=True)
                     run = gr.Button("Dub video", variant="primary")
                 with gr.Column():
                     output_video = gr.Video(label="Dubbed video")
@@ -178,7 +178,7 @@ def build_app():
                         audio_source_language = gr.Dropdown(matrix_languages, value="english", label="Source language")
                         audio_language = gr.Dropdown(languages, value="hindi", label="Target language")
                         audio_gender = gr.Radio(["auto", "male", "female"], value="auto", label="Voice / Gender", info="auto detects speaker gender")
-                    audio_voice_mode = gr.Radio(["Sarvam preset voice", "Clone original speaker with Sarvam"], value="Sarvam preset voice", label="Voice mode")
+                    audio_voice_mode = gr.Radio(["Sarvam preset voice", "Clone original speaker with Sarvam"], value="Clone original speaker with Sarvam", label="Voice mode", info="Best source-speaker match. You must confirm you have permission below.")
                     audio_voice_clone_consent = gr.Checkbox(label="I have permission to clone and use this speaker's voice", value=False)
                     audio_run = gr.Button("Dub Audio", variant="primary")
                 with gr.Column():

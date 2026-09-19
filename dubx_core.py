@@ -107,9 +107,21 @@ def text_to_audio_dub(text: str, target_language: str = "hindi", gender: str = "
 
 
 def _translated_segments(segments: list[SubtitleSegment], target_language: str, api_key: str | None, dialect_level: int = 2) -> tuple[list[SubtitleSegment], str]:
+    # ASR can split a single sentence into several timestamped fragments. Supply
+    # the full dialogue to each transcreation call so pronouns, jokes, and tone
+    # survive those boundaries while the segment's own duration still controls
+    # the spoken-length budget and subtitle timing.
+    context = " ".join(segment.text.strip() for segment in segments if segment.text.strip())
     translated: list[SubtitleSegment] = []
     for segment in segments:
-        result = transcreate(segment.text, target_language, api_key=api_key, duration_seconds=max(0.1, segment.end - segment.start), dialect_level=dialect_level)
+        result = transcreate(
+            segment.text,
+            target_language,
+            api_key=api_key,
+            duration_seconds=max(0.1, segment.end - segment.start),
+            dialect_level=dialect_level,
+            context=context,
+        )
         translated.append(SubtitleSegment(segment.start, segment.end, segment.text, result["transcreated_text"]))
     return translated, " ".join(item.translated_text for item in translated).strip()
 
@@ -134,7 +146,12 @@ def _resolve_video_file(video_path: Any) -> Path:
         video_path = v.get("path") if isinstance(v, dict) else (video_path.get("path") or video_path.get("name"))
     if not video_path or not str(video_path).strip():
         raise ValueError("Input video path cannot be empty")
-    source = Path(str(video_path).strip())
+    raw_path = str(video_path).strip()
+    if raw_path.startswith(("http://", "https://")):
+        from utils.ingestion import resolve_input
+
+        raw_path = resolve_input(raw_path, OUTPUT_DIR)
+    source = Path(raw_path)
     if not source.is_file():
         raise FileNotFoundError(f"Input video file not found: {video_path}")
     return source
@@ -301,6 +318,12 @@ def video_to_video_dub(
             raise RuntimeError("SARVAM_API_KEY is required for source-speaker cloning.")
         job = dub_media(str(source), source_language, target_language, "video")
         exports = job["exports"]
+        final_video = exports["video"]
+        if burn_subtitles:
+            # Sarvam's SRT belongs to its source-timeline-aligned dubbed audio;
+            # burn that exact track, not the original source audio.
+            final_video = output_path or str(OUTPUT_DIR / f"v2v_{base}_{target_language.lower()}_with_captions.mp4")
+            burn_captions(exports["video"], exports["audio"], exports["srt"], final_video)
         return {
             "pillar": "Video-to-Video + Captions" if burn_subtitles else "Video-to-Video",
             "input_video_path": str(source),
@@ -313,7 +336,7 @@ def video_to_video_dub(
             "subtitle_path": exports["srt"],
             "vtt_path": None,
             "burned_captions": burn_subtitles,
-            "output_video_path": exports["video"],
+            "output_video_path": final_video,
             "bgm_preserved": True,
             "audio_tracks": ["Sarvam source-timeline dub"],
             "clone_method": job["clone_method"],

@@ -90,8 +90,10 @@ Never translate word-for-word. Preserve intent, emotional energy, humour, sarcas
 metaphors, rhetorical pauses, named entities, numbers, units, URLs, and modern loan
 words. Use natural spoken {language} in a {register} register. Do not invent facts,
 omit safety-critical qualifications, add explanations to the spoken line, or return
-Markdown. Keep the result within the supplied syllable budget. Return strict JSON
-with only detected_intent, transcreated_text, and explanation."""
+Markdown. Treat any supplied surrounding dialogue as essential context: resolve
+pronouns, tone, callbacks, ambiguity, and sentence fragments from it, but translate
+only the requested line. Keep the result within the supplied syllable budget. Return
+strict JSON with only detected_intent, transcreated_text, and explanation."""
 
 
 def _normalise(text: str) -> str:
@@ -99,7 +101,7 @@ def _normalise(text: str) -> str:
     return re.sub(r"\s+", " ", cleaned.strip().lower()).rstrip(".!?")
 
 
-def _gemini(text: str, language: str, budget: SyllableBudget | None, api_key: str | None, register: str) -> dict[str, Any] | None:
+def _gemini(text: str, language: str, budget: SyllableBudget | None, api_key: str | None, register: str, context: str | None = None) -> dict[str, Any] | None:
     global _GEMINI_RETRY_AFTER
     key = api_key or os.getenv("GEMINI_API_KEY")
     if not key or os.getenv("DUBX_OFFLINE_MODE") == "1" or time.monotonic() < _GEMINI_RETRY_AFTER:
@@ -110,9 +112,10 @@ def _gemini(text: str, language: str, budget: SyllableBudget | None, api_key: st
 
         client = genai.Client(api_key=key)
         budget_text = f"Target syllables: {budget.target_syllables}." if budget else ""
+        context_text = f"\nSurrounding dialogue for meaning only:\n{context[:12000]}" if context else ""
         response = client.models.generate_content(
             model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
-            contents=f"{budget_text}\nTranscreate this text:\n{text}",
+            contents=f"{budget_text}{context_text}\n\nTranscreate this spoken line:\n{text}",
             config=types.GenerateContentConfig(
                 system_instruction=SYSTEM_PROMPT.format(language=language, register=register),
                 response_mime_type="application/json",
@@ -144,6 +147,7 @@ def transcreate(
     api_key: str | None = None,
     duration_seconds: float | None = None,
     dialect_level: int = 2,
+    context: str | None = None,
 ) -> dict[str, Any]:
     """Transcreate text, using Gemini when configured and an offline KB otherwise."""
 
@@ -153,7 +157,7 @@ def transcreate(
         raise ValueError("dialect_level must be 1 (formal), 2 (conversational), or 3 (street slang)")
     register = {1: "clear professional", 2: "warm conversational", 3: "natural youth slang"}[dialect_level]
     budget = budget_for(text, duration_seconds) if duration_seconds is not None else None
-    online = _gemini(text, config["name"], budget, api_key, register)
+    online = _gemini(text, config["name"], budget, api_key, register, context)
     if online:
         output = online.get("transcreated_text", text)
         if budget and budget_for(output, budget.duration_seconds).status == "overflow":
