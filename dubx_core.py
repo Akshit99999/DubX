@@ -14,6 +14,7 @@ import os
 import re
 import sys
 import tempfile
+from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Any, Coroutine, TypeVar
 
@@ -42,6 +43,8 @@ def text_to_text_dub(text: str, target_language: str = "hindi", api_key: str | N
         raise ValueError("Text input cannot be empty")
     config = language_config(target_language)
     result = transcreate(text, target_language, api_key=api_key, duration_seconds=duration_seconds)
+    budget_obj = result.get("budget")
+    budget_dict = asdict(budget_obj) if is_dataclass(budget_obj) else budget_obj
     return {
         "pillar": "Text-to-Text",
         "original_text": text,
@@ -49,7 +52,7 @@ def text_to_text_dub(text: str, target_language: str = "hindi", api_key: str | N
         "detected_intent": result["detected_intent"],
         "transcreated_text": result["transcreated_text"],
         "explanation": result["explanation"],
-        "budget": result.get("budget"),
+        "budget": budget_dict,
         "engine": result.get("engine"),
     }
 
@@ -67,15 +70,18 @@ def dual_language_code_mix(
 
     if not text or not text.strip():
         raise ValueError("Text input cannot be empty")
-    return code_mix_text(
+    res = code_mix_text(
         text,
         primary_language=primary_language,
         secondary_language=secondary_language,
-        intensity=intensity,
+        intensity=int(intensity),
         script=script,
         api_key=api_key,
         duration_seconds=duration_seconds,
     )
+    if is_dataclass(res.get("budget")):
+        res["budget"] = asdict(res["budget"])
+    return res
 
 
 def text_to_audio_dub(text: str, target_language: str = "hindi", gender: str = "male", output_path: str | None = None, api_key: str | None = None, rate: str = "+0%") -> dict[str, Any]:
@@ -87,7 +93,14 @@ def text_to_audio_dub(text: str, target_language: str = "hindi", gender: str = "
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         output_path = str(OUTPUT_DIR / f"t2a_{_safe_stem(text[:30])}_{target_language.lower()}.mp3")
     synthesize(result["transcreated_text"], target_language, gender, output_path, rate=rate)
-    return {**result, "pillar": "Text-to-Audio", "voice_used": config[gender.lower()], "audio_path": output_path}
+    voice = config.get(gender.lower(), config.get("default", config["male"]))
+    return {
+        **result,
+        "pillar": "Text-to-Audio",
+        "voice_used": voice,
+        "audio_path": output_path,
+        "output_audio_path": output_path,
+    }
 
 
 def _translated_segments(segments: list[SubtitleSegment], target_language: str, api_key: str | None) -> tuple[list[SubtitleSegment], str]:
@@ -98,28 +111,58 @@ def _translated_segments(segments: list[SubtitleSegment], target_language: str, 
     return translated, " ".join(item.translated_text for item in translated).strip()
 
 
-def audio_to_audio_dub(audio_path: str, target_language: str = "hindi", gender: str = "male", output_path: str | None = None, api_key: str | None = None, rate: str = "+0%") -> dict[str, Any]:
+def _resolve_audio_file(audio_path: Any) -> Path:
+    if isinstance(audio_path, dict):
+        audio_path = audio_path.get("path") or audio_path.get("name")
+    elif isinstance(audio_path, tuple) and len(audio_path) == 2:
+        from app import _normalize_audio
+        audio_path = _normalize_audio(audio_path)
+    if not audio_path or not str(audio_path).strip():
+        raise ValueError("Input audio path cannot be empty")
+    source = Path(str(audio_path).strip())
+    if not source.is_file():
+        raise FileNotFoundError(f"Input audio file not found: {audio_path}")
+    return source
+
+
+def _resolve_video_file(video_path: Any) -> Path:
+    if isinstance(video_path, dict):
+        v = video_path.get("video")
+        video_path = v.get("path") if isinstance(v, dict) else (video_path.get("path") or video_path.get("name"))
+    if not video_path or not str(video_path).strip():
+        raise ValueError("Input video path cannot be empty")
+    source = Path(str(video_path).strip())
+    if not source.is_file():
+        raise FileNotFoundError(f"Input video file not found: {video_path}")
+    return source
+
+
+def audio_to_audio_dub(audio_path: str | Any, target_language: str = "hindi", gender: str = "male", output_path: str | None = None, api_key: str | None = None, rate: str = "+0%") -> dict[str, Any]:
     """Mode 3: timestamped ASR, transcreation, and regional speech synthesis."""
 
-    source = Path(audio_path)
-    if not source.exists():
-        raise FileNotFoundError(f"Input audio file not found: {audio_path}")
+    source = _resolve_audio_file(audio_path)
     config = language_config(target_language)
     segments = transcribe(str(source), api_key=api_key)
+    if not segments:
+        raise ValueError("No speech detected in input audio")
     localized_segments, localized_text = _translated_segments(segments, target_language, api_key)
+    if not localized_text.strip():
+        raise ValueError("Transcreation resulted in empty text")
     if not output_path:
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         output_path = str(OUTPUT_DIR / f"a2a_{_safe_stem(source.stem)}_{target_language.lower()}.mp3")
     synthesize(localized_text, target_language, gender, output_path, rate=rate)
+    voice = config.get(gender.lower(), config.get("default", config["male"]))
     return {
         "pillar": "Audio-to-Audio",
         "input_audio_path": str(source),
         "transcribed_source": " ".join(segment.text for segment in segments),
         "target_language": config["name"],
-        "voice_used": config[gender.lower()],
+        "voice_used": voice,
         "transcreated_text": localized_text,
         "segments": localized_segments,
         "output_audio_path": output_path,
+        "audio_path": output_path,
     }
 
 
@@ -139,12 +182,10 @@ def _mix_bgm(bgm_path: str, voice_path: str, output_path: str) -> str:
     return output_path
 
 
-def video_to_video_dub(video_path: str, target_language: str = "hindi", gender: str = "male", output_path: str | None = None, burn_subtitles: bool = False, api_key: str | None = None, rate: str = "+0%") -> dict[str, Any]:
+def video_to_video_dub(video_path: str | Any, target_language: str = "hindi", gender: str = "male", output_path: str | None = None, burn_subtitles: bool = False, api_key: str | None = None, rate: str = "+0%") -> dict[str, Any]:
     """Mode 4/5: preserve video frames, create a dual-track dub, and optionally burn captions."""
 
-    source = Path(video_path)
-    if not source.exists():
-        raise FileNotFoundError(f"Input video file not found: {video_path}")
+    source = _resolve_video_file(video_path)
     config = language_config(target_language)
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     base = _safe_stem(source.stem)
@@ -154,7 +195,11 @@ def video_to_video_dub(video_path: str, target_language: str = "hindi", gender: 
         extracted_audio = extract_audio(str(source), str(temp / "source.wav"))
         vocals, bgm = separate_stems(extracted_audio, str(temp / "stems"))
         segments = transcribe(vocals or extracted_audio, api_key=api_key)
+        if not segments:
+            raise ValueError("No speech detected in video audio track")
         localized_segments, localized_text = _translated_segments(segments, target_language, api_key)
+        if not localized_text.strip():
+            raise ValueError("Transcreation resulted in empty text")
 
         dubbed_audio = str(OUTPUT_DIR / f"dubbed_{base}_{target_language.lower()}.mp3")
         synthesize(localized_text, target_language, gender, dubbed_audio, rate=rate)
@@ -174,12 +219,13 @@ def video_to_video_dub(video_path: str, target_language: str = "hindi", gender: 
         else:
             final_video = remux_video(str(source), mastered_audio, output_path, original_audio=extracted_audio, language_code=config["code"])
 
+    voice = config.get(gender.lower(), config.get("default", config["male"]))
     return {
         "pillar": "Video-to-Video + Captions" if burn_subtitles else "Video-to-Video",
         "input_video_path": str(source),
         "transcribed_source": " ".join(segment.text for segment in segments),
         "target_language": config["name"],
-        "voice_used": config[gender.lower()],
+        "voice_used": voice,
         "transcreated_text": localized_text,
         "segments": localized_segments,
         "dubbed_audio_path": dubbed_audio,

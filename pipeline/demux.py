@@ -27,8 +27,12 @@ def separate_stems(audio_path: str, output_dir: str) -> tuple[str | None, str | 
         return None, None
     output = Path(output_dir)
     output.mkdir(parents=True, exist_ok=True)
-    subprocess.run([demucs, "--two-stems=vocals", "-o", str(output), audio_path], check=True)
-    stem_root = output / "htdemucs" / Path(audio_path).stem
-    vocals = stem_root / "vocals.wav"
-    no_vocals = stem_root / "no_vocals.wav"
-    return (str(vocals) if vocals.exists() else None, str(no_vocals) if no_vocals.exists() else None)
+    try:
+        subprocess.run([demucs, "--two-stems=vocals", "-o", str(output), audio_path], check=True, capture_output=True)
+        stem_root = output / "htdemucs" / Path(audio_path).stem
+        vocals = stem_root / "vocals.wav"
+        no_vocals = stem_root / "no_vocals.wav"
+        return (str(vocals) if vocals.exists() else None, str(no_vocals) if no_vocals.exists() else None)
+    except Exception as exc:
+        print(f"[DubX] Demucs stem separation failed: {exc}; proceeding without BGM separation")
+        return None, None

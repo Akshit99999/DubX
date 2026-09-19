@@ -24,10 +24,22 @@ def _groq(audio_path: str, api_key: str | None) -> list[SubtitleSegment] | None:
                 response_format="verbose_json",
                 timestamp_granularities=["segment"],
             )
-        return [
-            SubtitleSegment(item.start, item.end, item.text)
-            for item in getattr(response, "segments", [])
-        ]
+        segments_data = getattr(response, "segments", None)
+        if segments_data is None and isinstance(response, dict):
+            segments_data = response.get("segments")
+        if not segments_data:
+            text = getattr(response, "text", None) or (response.get("text") if isinstance(response, dict) else "")
+            if text and str(text).strip():
+                return [SubtitleSegment(0.0, 10.0, str(text).strip())]
+            return None
+        segments = []
+        for item in segments_data:
+            start = getattr(item, "start", None) if not isinstance(item, dict) else item.get("start")
+            end = getattr(item, "end", None) if not isinstance(item, dict) else item.get("end")
+            text = getattr(item, "text", None) if not isinstance(item, dict) else item.get("text")
+            if start is not None and end is not None and text is not None:
+                segments.append(SubtitleSegment(float(start), float(end), str(text)))
+        return segments or None
     except Exception as exc:
         print(f"[DubX] Groq ASR unavailable; trying local Whisper: {exc}")
         return None

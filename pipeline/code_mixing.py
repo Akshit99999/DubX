@@ -65,7 +65,8 @@ def romanize_text(text: str) -> str:
 
 
 def _normalise(text: str) -> str:
-    return re.sub(r"\s+", " ", text.strip().lower()).rstrip(".!?")
+    cleaned = text.replace("’", "'").replace("‘", "'").replace('"', "").replace('"', "")
+    return re.sub(r"\s+", " ", cleaned.strip().lower()).rstrip(".!?")
 
 
 def _gemini_mix(text: str, primary: str, secondary: str, intensity: int, script: str, api_key: str | None) -> dict[str, Any] | None:
@@ -95,8 +96,13 @@ def _gemini_mix(text: str, primary: str, secondary: str, intensity: int, script:
                 temperature=0.4,
             ),
         )
-        data = json.loads(response.text)
-        if data.get("native") or data.get("romanized"):
+        raw_text = getattr(response, "text", None)
+        if not raw_text:
+            return None
+        cleaned_json = re.sub(r"^```(?:json)?\s*", "", raw_text.strip(), flags=re.IGNORECASE)
+        cleaned_json = re.sub(r"\s*```$", "", cleaned_json.strip())
+        data = json.loads(cleaned_json)
+        if isinstance(data, dict) and (data.get("native") or data.get("romanized")):
             return data
     except Exception as exc:
         print(f"[DubX] Gemini code-mixing unavailable; using offline matrix: {exc}")

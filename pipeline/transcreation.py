@@ -89,7 +89,8 @@ detected_intent, transcreated_text, and explanation."""
 
 
 def _normalise(text: str) -> str:
-    return re.sub(r"\s+", " ", text.strip().lower()).rstrip(".!?")
+    cleaned = text.replace("’", "'").replace("‘", "'").replace('"', "").replace('"', "")
+    return re.sub(r"\s+", " ", cleaned.strip().lower()).rstrip(".!?")
 
 
 def _gemini(text: str, language: str, budget: SyllableBudget | None, api_key: str | None) -> dict[str, Any] | None:
@@ -111,8 +112,13 @@ def _gemini(text: str, language: str, budget: SyllableBudget | None, api_key: st
                 temperature=0.3,
             ),
         )
-        data = json.loads(response.text)
-        if not data.get("transcreated_text"):
+        raw_text = getattr(response, "text", None)
+        if not raw_text:
+            return None
+        cleaned_json = re.sub(r"^```(?:json)?\s*", "", raw_text.strip(), flags=re.IGNORECASE)
+        cleaned_json = re.sub(r"\s*```$", "", cleaned_json.strip())
+        data = json.loads(cleaned_json)
+        if not isinstance(data, dict) or not data.get("transcreated_text"):
             return None
         return data
     except Exception as exc:

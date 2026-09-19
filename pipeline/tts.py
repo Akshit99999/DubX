@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import os
 from pathlib import Path
 
@@ -18,6 +19,18 @@ async def _edge_tts(text: str, voice: str, output_path: str, rate: str) -> str:
     return output_path
 
 
+def _run_async(coro):
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop and loop.is_running():
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            return pool.submit(asyncio.run, coro).result()
+    return asyncio.run(coro)
+
+
 def synthesize(text: str, language: str, gender: str, output_path: str, rate: str = "+0%") -> str:
     """Synthesize a regional MP3 using the configured optional backend."""
 
@@ -25,4 +38,4 @@ def synthesize(text: str, language: str, gender: str, output_path: str, rate: st
     backend = os.getenv("DUBX_TTS_BACKEND", "edge").lower()
     if backend != "edge":
         raise RuntimeError(f"Unsupported TTS backend '{backend}'. Set DUBX_TTS_BACKEND=edge.")
-    return asyncio.run(_edge_tts(text, voice_for(language, gender), output_path, rate))
+    return _run_async(_edge_tts(text, voice_for(language, gender), output_path, rate))

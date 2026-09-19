@@ -25,18 +25,27 @@ def fit_audio_to_duration(audio_path: str, target_seconds: float, output_path: s
 
     if not shutil.which("ffmpeg"):
         raise RuntimeError("FFmpeg is required for audio realignment but was not found on PATH")
-    if target_seconds <= 0:
+    if target_seconds <= 0 or not shutil.which("ffprobe"):
         return audio_path
-    # Probe duration using ffprobe when available; otherwise leave the input unchanged.
-    if not shutil.which("ffprobe"):
+
+    try:
+        probe = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", audio_path],
+            check=True, capture_output=True, text=True,
+        )
+        duration_str = probe.stdout.strip()
+        if not duration_str or duration_str == "N/A":
+            return audio_path
+        source_seconds = float(duration_str)
+    except Exception:
         return audio_path
-    probe = subprocess.run(
-        ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", audio_path],
-        check=True, capture_output=True, text=True,
-    )
-    source_seconds = float(probe.stdout.strip())
+
     if source_seconds <= 0:
         return audio_path
     factor = source_seconds / target_seconds
+    if 0.98 <= factor <= 1.02:
+        return audio_path
+
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     subprocess.run(["ffmpeg", "-y", "-i", audio_path, "-filter:a", _atempo_chain(factor), output_path], check=True, capture_output=True)
     return output_path
