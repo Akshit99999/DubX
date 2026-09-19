@@ -141,6 +141,156 @@ Final Mastered Audio:  ██ हिंदी VOICE (LOUD) ██ BGM (DUCKED -1
 
 ---
 
+## The Transcreation Engine: Preserving Metaphors, Idioms & Meaning Across All Regional Languages
+
+### The Core Problem: Translation Destroys Meaning
+
+Standard AI translation (Google Translate, DeepL, even basic LLM calls) produces **literal word-for-word output** that destroys the speaker's intent. In dubbing, this is fatal — the audience hears nonsensical phrases and immediately disconnects.
+
+| Original English | ❌ Literal Translation (Hindi) | What It Actually Means | ✅ DubX Transcreation (Hindi) |
+| :--- | :--- | :--- | :--- |
+| *"That's a steal at this price!"* | *"इस कीमत पर यह एक चोरी है!"* (This is a theft!) | It's a great bargain | *"इस कीमत पर तो लूट मची है भाई!"* |
+| *"He hit it out of the park"* | *"उसने इसे पार्क से बाहर मारा"* (Physically hitting a park) | He did an exceptional job | *"उसने तो कमाल कर दिया!"* |
+| *"Don't put all your eggs in one basket"* | *"अपने सभी अंडे एक टोकरी में मत रखो"* (Literally about eggs) | Diversify your risk | *"सारा पैसा एक जगह मत लगाओ"* |
+| *"The market is on fire"* | *"बाज़ार में आग लगी है"* (The market is literally burning) | The market is booming | *"बाज़ार में तो धूम मची है!"* |
+| *"Bear market incoming"* | *"भालू बाज़ार आ रहा है"* (A bear animal market) | Stock market decline | *"मंदी आने वाली है भाई"* |
+
+DubX does **not** translate. It **transcreates** — preserving the **intent, emotion, rhetorical device, and cultural impact** of every sentence.
+
+---
+
+### 3-Layer Transcreation Pipeline
+
+```mermaid
+flowchart TD
+    SRC["Source English:\n'Don't put all your eggs in one basket'"]
+
+    SRC --> L1["Layer 1: Intent Extraction\nWhat does the speaker MEAN?\n→ 'Diversify your investments to reduce risk'"]
+
+    L1 --> L2["Layer 2: Cultural Equivalent Finder\nWhat idiom in the TARGET language conveys the SAME feeling?\n→ Hindi: 'सारा पैसा एक जगह मत लगाओ'\n→ Tamil: 'ஒரே இடத்தில் எல்லா பணத்தையும் போடாதீங்க'\n→ Telugu: 'మొత్తం డబ్బు ఒకే చోట పెట్టకు బ్రో'"]
+
+    L2 --> L3["Layer 3: Duration and Syllable Fitting\nDoes it fit the original video timing?\n→ Original: 2.8s / 12 syllables\n→ Hindi: 2.6s / 11 syllables"]
+
+    L3 --> OUT["Final Transcreated Output\n(Culturally adapted, duration-matched, natural slang)"]
+```
+
+---
+
+### Per-Language Cultural Profiles
+
+Every language has its own **soul** — the same English metaphor requires a **different cultural equivalent** in Hindi vs Tamil vs Telugu vs Bengali. There is no universal "Indian translation."
+
+#### Language Profile Configuration (used by Gemini 1.5 Flash)
+
+| Language | Dialect Used | Casual Tone Markers | Proverb Style | Keep English As-Is |
+| :--- | :--- | :--- | :--- | :--- |
+| **Hindi** | Conversational North Indian with Hinglish code-mixing | *bhai, yaar* (भाई, यार) | Hindi muhavare (मुहावरे), NOT Sanskrit shlokas | subscribe, like, share, portfolio, mutual fund, SIP, returns, market |
+| **Tamil** | Spoken colloquial Tamil (பேச்சுத் தமிழ்), NOT literary Sentamizh | *da, di, pa* (டா, டி, பா) | Tamil pazhamozhi (பழமொழி) + Chennai slang | subscribe, like, share, phone, app, invest, stock market |
+| **Telugu** | Conversational Hyderabadi / Coastal Telugu with modern slang | *bro, ra, ri* (బ్రో, రా, రి) | Telugu saamethalu (సామెతలు) + Tollywood references | subscribe, like, share, invest, market, feature, update |
+| **Bengali** | Colloquial Kolkata Bengali (চলিত ভাষা), NOT Sadhu Bhasha | *re, tui* (রে, তুই) | Bengali probad (প্রবাদ) + Bangla cinema references | subscribe, like, share, invest, market, phone, online |
+| **Kannada** | Spoken Bengaluru Kannada with modern slang | *maga, guru* (ಮಗಾ, ಗುರು) | Kannada gadegalu (ಗಾದೆಗಳು) + local references | subscribe, like, share, invest, app, update, feature |
+| **Marathi** | Colloquial Puneri / Mumbai Marathi | *re, ya* (रे, या) | Marathi mhani (म्हणी) + cultural references | subscribe, like, share, invest, market, SIP, returns |
+
+---
+
+### Cross-Language Metaphor Adaptation Examples
+
+#### One Sentence → Six Different Transcreations:
+
+**English:** *"Don't put all your eggs in one basket"*
+
+| Language | ❌ Literal Translation | ✅ DubX Transcreation |
+| :--- | :--- | :--- |
+| **Hindi** | अपने सभी अंडे एक टोकरी में मत रखो | **सारा पैसा एक जगह मत लगाओ भाई** |
+| **Tamil** | உங்கள் முட்டைகளை ஒரு கூடையில் வைக்காதீர்கள் | **ஒரே இடத்தில் எல்லா பணத்தையும் போடாதீங்க** |
+| **Telugu** | మీ గుడ్లన్నీ ఒకే బుట్టలో పెట్టకండి | **మొత్తం డబ్బు ఒకే చోట పెట్టకు బ్రో** |
+| **Bengali** | সব ডিম এক ঝুড়িতে রেখো না | **সব টাকা এক জায়গায় ঢালিস না রে** |
+| **Kannada** | ನಿಮ್ಮ ಮೊಟ್ಟೆಗಳನ್ನೆಲ್ಲಾ ಒಂದೇ ಬುಟ್ಟಿಯಲ್ಲಿ ಇಡಬೇಡಿ | **ಎಲ್ಲಾ ದುಡ್ಡನ್ನ ಒಂದೇ ಕಡೆ ಹಾಕಬೇಡ ಮಗಾ** |
+| **Marathi** | तुमची सगळी अंडी एकाच टोपलीत ठेवू नका | **सगळा पैसा एकाच ठिकाणी लावू नकोस रे** |
+
+#### Tech Creator Context (MKBHD style):
+
+| English | Hindi | Tamil | Telugu |
+| :--- | :--- | :--- | :--- |
+| *"This phone is a beast!"* | *"ये फोन तो जानवर है भाई!"* | *"இந்த போன் ஒரு மிருகம் டா!"* | *"ఈ ఫోన్ ఒక బీస్ట్ రా!"* |
+| *"It blew my mind"* | *"मेरा दिमाग हिल गया"* | *"என் மண்டையே போச்சு டா"* | *"నా బుర్ర పనిచేయడం ఆపేసింది"* |
+| *"This feature is a game changer"* | *"ये फीचर तो गेम चेंजर है"* | *"இந்த ஃபீச்சர் கேம் சேஞ்சர் டா"* | *"ఈ ఫీచర్ గేమ్ చేంజర్ బ్రో"* |
+
+#### Finance Creator Context:
+
+| English | Hindi | Tamil | Bengali |
+| :--- | :--- | :--- | :--- |
+| *"The market is on fire!"* | *"मार्केट में तो धूम मची है!"* | *"மார்க்கெட் தீ பிடிச்சு எரியுது!"* | *"মার্কেটে আগুন লেগেছে রে!"* |
+| *"This stock is a hidden gem"* | *"ये स्टॉक छुपा हुआ हीरा है"* | *"இந்த ஸ்டாக் ஒரு hidden gem டா"* | *"এই স্টকটা লুকানো রত্ন রে"* |
+| *"Don't chase returns blindly"* | *"आंख बंद करके रिटर्न्स के पीछे मत भागो"* | *"கண்ணு மூடி ரிட்டர்ன்ஸ் பின்னாடி ஓடாதீங்க"* | *"চোখ বুজে রিটার্নের পেছনে ছুটিস না"* |
+
+#### Motivational / Emotional Context:
+
+| English | Hindi | Tamil | Telugu | Marathi |
+| :--- | :--- | :--- | :--- | :--- |
+| *"Stay hungry, stay foolish"* | *"जुनून मत छोड़ो, हिम्मत मत हारो"* | *"ஆர்வத்தை விடாதீர்கள், துணிச்சலை இழக்காதீர்கள்"* | *"ఆకలిగా ఉండు, సాహసంగా ఉండు"* | *"जिद्द सोडू नकोस, धाडस हरवू नकोस"* |
+| *"Your time will come"* | *"तेरा टाइम आएगा भाई"* | *"உன் நேரம் வரும் டா"* | *"నీ టైం వస్తుంది రా"* | *"तुझा वेळ येईल रे"* |
+| *"Fall seven times, stand up eight"* | *"सात बार गिरो, आठवीं बार उठो"* | *"ஏழு தடவை விழு, எட்டாவது தடவை எழு"* | *"ఏడు సార్లు పడు, ఎనిమిదో సారి లే"* | *"सात वेळा पड, आठव्यांदा उभा रहा"* |
+
+---
+
+### The 7 Transcreation Rules (Enforced via Gemini System Prompt)
+
+These rules are dynamically injected into the Gemini 1.5 Flash system prompt for every transcreation request:
+
+```
+RULE 1: NEVER TRANSLATE LITERALLY
+  → You are a TRANSCREATOR, not a translator.
+  → Preserve INTENT, EMOTION, and RHETORICAL IMPACT — NOT individual words.
+
+RULE 2: METAPHOR → CULTURAL EQUIVALENT
+  → English metaphor → Find the EQUIVALENT metaphor in the target language.
+  → "Piece of cake" → Hindi: "बाएं हाथ का खेल" (NOT "केक का टुकड़ा")
+  → "Break a leg" → Tamil: "வெற்றி பெறு டா" (NOT "காலை உடை")
+
+RULE 3: PROVERBS → PROVERBS
+  → Map to the equivalent regional proverb with the SAME moral lesson.
+  → Never translate a proverb word-for-word.
+
+RULE 4: HUMOR & SARCASM PRESERVATION
+  → Sarcastic tone MUST sound equally sarcastic in the regional language.
+  → "Oh great, another meeting" → Hindi: "वाह, एक और मीटिंग... क्या बात है"
+
+RULE 5: TECHNICAL JARGON HANDLING
+  → Keep universally understood terms as-is in regional script:
+    "portfolio" → "पोर्टफोलियो" (NOT "विभाग")
+    "mutual fund" → "म्यूचुअल फंड" (NOT "पारस्परिक निधि")
+    "subscribe" → "सब्सक्राइब" (NOT "सदस्यता लें")
+  → This is how real Indian creators speak (Hinglish / Tanglish / Tenglish).
+
+RULE 6: EMOTIONAL MARKERS
+  → Preserve exclamation marks, rhetorical questions, dramatic pauses
+    in the exact same sentence positions.
+  → "And you know what happened next?!" → "और फिर पता है क्या हुआ?!"
+
+RULE 7: SYLLABLE BUDGET
+  → Output MUST be speakable within the original segment's duration.
+  → Target: ~4 syllables/second for Indic languages.
+  → If the natural translation is too long, SHORTEN it using punchy
+    vernacular phrasing while keeping the core meaning.
+```
+
+---
+
+### Why This Matters: The Competitive Moat
+
+| Aspect | Standard Translation (All Competitors) | DubX Transcreation Engine |
+| :--- | :--- | :--- |
+| **Metaphors** | Destroyed (translated word-for-word) | **Adapted to per-language cultural equivalent** |
+| **Humor / Sarcasm** | Lost (sounds flat or confusing) | **Tone, timing, and energy preserved** |
+| **Technical Terms** | Over-translated into formal Sanskrit/classical words nobody uses | **Kept as Hinglish/Tanglish (how real Indians actually speak)** |
+| **Proverbs** | Word-for-word nonsense in every language | **Mapped to equivalent regional proverb with same moral** |
+| **Emotional Energy** | Flattened into monotone text | **Exclamation, drama, rhetorical questions intact** |
+| **Regional Dialects** | One generic "Hindi" / "Tamil" for all contexts | **Puneri vs Mumbai Marathi, Hyderabadi vs Coastal Telugu, Chennai vs formal Tamil** |
+| **Code-Mixing** | Fails on Hinglish/Tanglish mid-sentence switches | **Natively handles bilingual vocabulary within the same sentence** |
+
+---
+
 ## Mode 2: 🎙️ Live Mode (Real-Time Streaming Dubber)
 
 ### Purpose
