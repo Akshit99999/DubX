@@ -101,6 +101,52 @@ def _normalise(text: str) -> str:
     return re.sub(r"\s+", " ", cleaned.strip().lower()).rstrip(".!?")
 
 
+def _astra(text: str, language: str, budget: SyllableBudget | None, api_key: str | None, register: str, context: str | None = None) -> dict[str, Any] | None:
+    key = api_key or os.getenv("ASTRA_API_KEY") or os.getenv("ABACUS_API_KEY")
+    if not key or os.getenv("DUBX_OFFLINE_MODE") == "1":
+        return None
+    try:
+        import requests
+
+        url = "https://routellm.abacus.ai/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+        }
+        budget_text = f"Target syllables: {budget.target_syllables}." if budget else ""
+        context_text = f"\nSurrounding dialogue for meaning only:\n{context[:12000]}" if context else ""
+        model = os.getenv("ASTRA_MODEL", "gpt-6-astra")
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPT.format(language=language, register=register)},
+                {"role": "user", "content": f"{budget_text}{context_text}\n\nTranscreate this spoken line:\n{text}"},
+            ],
+            "response_format": {"type": "json_object"},
+            "temperature": 0.3,
+        }
+        resp = requests.post(url, headers=headers, json=payload, timeout=20)
+        if resp.status_code != 200:
+            print(f"[DubX] Astra 6 API error ({resp.status_code}): {resp.text[:200]}")
+            return None
+        data = resp.json()
+        choices = data.get("choices", [])
+        if not choices:
+            return None
+        content = choices[0].get("message", {}).get("content", "")
+        if not content:
+            return None
+        cleaned_json = re.sub(r"^```(?:json)?\s*", "", content.strip(), flags=re.IGNORECASE)
+        cleaned_json = re.sub(r"\s*```$", "", cleaned_json.strip())
+        parsed = json.loads(cleaned_json)
+        if isinstance(parsed, dict) and parsed.get("transcreated_text"):
+            return parsed
+        return None
+    except Exception as exc:
+        print(f"[DubX] Astra 6 unavailable; falling back: {exc}")
+        return None
+
+
 def _gemini(text: str, language: str, budget: SyllableBudget | None, api_key: str | None, register: str, context: str | None = None) -> dict[str, Any] | None:
     global _GEMINI_RETRY_AFTER
     key = api_key or os.getenv("GEMINI_API_KEY")
@@ -149,7 +195,7 @@ def transcreate(
     dialect_level: int = 2,
     context: str | None = None,
 ) -> dict[str, Any]:
-    """Transcreate text, using Gemini when configured and an offline KB otherwise."""
+    """Transcreate text, using Astra 6 / Gemini when configured and an offline KB otherwise."""
 
     config = language_config(target_language)
     lang_key = target_language.lower()
@@ -157,7 +203,16 @@ def transcreate(
         raise ValueError("dialect_level must be 1 (formal), 2 (conversational), or 3 (street slang)")
     register = {1: "clear professional", 2: "warm conversational", 3: "natural youth slang"}[dialect_level]
     budget = budget_for(text, duration_seconds) if duration_seconds is not None else None
-    online = _gemini(text, config["name"], budget, api_key, register, context)
+
+    # Priority 1: Astra 6 (GPT-6 Astra via Abacus.AI RouteLLM)
+    online = _astra(text, config["name"], budget, api_key, register, context)
+    engine_name = "astra-6"
+
+    # Priority 2: Gemini
+    if not online:
+        online = _gemini(text, config["name"], budget, api_key, register, context)
+        engine_name = "gemini"
+
     if online:
         output = online.get("transcreated_text", text)
         if budget and budget_for(output, budget.duration_seconds).status == "overflow":
@@ -166,9 +221,9 @@ def transcreate(
             "original_text": text,
             "detected_intent": online.get("detected_intent", "Preserved contextual meaning"),
             "transcreated_text": output,
-            "explanation": online.get("explanation", "Gemini transcreation"),
+            "explanation": online.get("explanation", f"{engine_name.capitalize()} transcreation"),
             "budget": budget,
-            "engine": "gemini",
+            "engine": engine_name,
             "register": register,
         }
 

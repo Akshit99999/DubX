@@ -73,6 +73,62 @@ def _normalise(text: str) -> str:
     return re.sub(r"\s+", " ", cleaned.strip().lower()).rstrip(".!?")
 
 
+def _astra_mix(text: str, primary: str, secondary: str, intensity: int, script: str, api_key: str | None) -> dict[str, Any] | None:
+    key = api_key or os.getenv("ASTRA_API_KEY") or os.getenv("ABACUS_API_KEY")
+    if not key or os.getenv("DUBX_OFFLINE_MODE") == "1":
+        return None
+    try:
+        import requests
+
+        url = "https://routellm.abacus.ai/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+        }
+        prompt = (
+            f"Primary language: {language_config(primary)['name']}\n"
+            f"Secondary language: {language_config(secondary)['name']}\n"
+            f"Code-mixing intensity: {intensity}/3 (1=15%, 2=30%, 3=50% secondary language)\n"
+            f"Script preference: {script}\n\nText: {text}"
+        )
+        model = os.getenv("ASTRA_MODEL", "gpt-6-astra")
+        payload = {
+            "model": model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "You are an Indian bilingual dubbing director. Blend grammar and idioms naturally, "
+                        "preserve humor and intent, and return strict JSON with native, romanized, detected_intent, style."
+                    ),
+                },
+                {"role": "user", "content": prompt},
+            ],
+            "response_format": {"type": "json_object"},
+            "temperature": 0.4,
+        }
+        resp = requests.post(url, headers=headers, json=payload, timeout=20)
+        if resp.status_code != 200:
+            print(f"[DubX] Astra 6 code-mixing error ({resp.status_code}): {resp.text[:200]}")
+            return None
+        data = resp.json()
+        choices = data.get("choices", [])
+        if not choices:
+            return None
+        content = choices[0].get("message", {}).get("content", "")
+        if not content:
+            return None
+        cleaned_json = re.sub(r"^```(?:json)?\s*", "", content.strip(), flags=re.IGNORECASE)
+        cleaned_json = re.sub(r"\s*```$", "", cleaned_json.strip())
+        parsed = json.loads(cleaned_json)
+        if isinstance(parsed, dict) and (parsed.get("native") or parsed.get("romanized")):
+            return parsed
+        return None
+    except Exception as exc:
+        print(f"[DubX] Astra 6 code-mixing unavailable; falling back: {exc}")
+        return None
+
+
 def _gemini_mix(text: str, primary: str, secondary: str, intensity: int, script: str, api_key: str | None) -> dict[str, Any] | None:
     global _GEMINI_RETRY_AFTER
     key = api_key or os.getenv("GEMINI_API_KEY")
@@ -134,8 +190,18 @@ def code_mix_text(text: str, primary_language: str, secondary_language: str, int
         raise ValueError("script must be native, romanized, or dual")
 
     key = (primary, secondary, _normalise(text))
-    result = _gemini_mix(text, primary, secondary, intensity, script, api_key)
-    engine = "gemini" if result else None
+
+    # Priority 1: Astra 6 (GPT-6 Astra via Abacus.AI RouteLLM)
+    result = _astra_mix(text, primary, secondary, intensity, script, api_key)
+    engine = "astra-6" if result else None
+
+    # Priority 2: Gemini
+    if not result:
+        result = _gemini_mix(text, primary, secondary, intensity, script, api_key)
+        if result:
+            engine = "gemini"
+
+    # Priority 3: Offline Matrix
     if not result:
         result = OFFLINE_MIXES.get(key)
         if result:
