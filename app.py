@@ -12,20 +12,27 @@ from pathlib import Path
 
 from typing import Any
 
-import gradio as gr
+try:
+    import gradio as gr
+except ImportError:
+    gr = None
 from config import OUTPUT_DIR, VOICE_MAP
 from dubx_core import audio_to_audio_dub, dual_language_code_mix, text_to_text_dub, video_to_video_dub
 from utils.ingestion import resolve_input
 
 
+def _ui_error(message: str) -> Exception:
+    return gr.Error(message) if gr is not None else ValueError(message)
+
+
 def _normalize_audio(audio_file: Any) -> str:
     """Normalize any Gradio audio input (filepath, tuple, or dict) to a local wav file path."""
     if audio_file is None:
-        raise gr.Error("Record or upload an audio clip first")
+        raise _ui_error("Record or upload an audio clip first")
     if isinstance(audio_file, dict):
         path = audio_file.get("path") or audio_file.get("name")
         if not path:
-            raise gr.Error("Invalid audio data received")
+            raise _ui_error("Invalid audio data received")
         return str(path)
     if isinstance(audio_file, tuple) and len(audio_file) == 2:
         sr, data = audio_file
@@ -53,13 +60,13 @@ def _normalize_audio(audio_file: Any) -> str:
                 wf.setframerate(int(sr))
                 wf.writeframes(data.tobytes())
             return temp_path
-        raise gr.Error("Unsupported audio array format")
+        raise _ui_error("Unsupported audio array format")
     if isinstance(audio_file, (str, Path)):
         s = str(audio_file).strip()
         if not s:
-            raise gr.Error("Audio path cannot be empty")
+            raise _ui_error("Audio path cannot be empty")
         return s
-    raise gr.Error(f"Unsupported audio input type: {type(audio_file)}")
+    raise _ui_error(f"Unsupported audio input type: {type(audio_file)}")
 
 
 def process_studio(
@@ -69,7 +76,9 @@ def process_studio(
     gender: str,
     dialect: int,
     burn_captions: bool,
-    clone_voice: bool = True,
+    voice_mode: str,
+    voice_clone_consent: bool,
+    source_language: str,
 ):
     """Gradio callback for local upload, browser recording, or URL ingestion."""
 
@@ -80,7 +89,10 @@ def process_studio(
     url = video_url.strip() if isinstance(video_url, str) else ""
     source = video_file or url
     if not source:
-        raise gr.Error("Upload a video/recording or paste a video URL")
+        raise _ui_error("Upload a video/recording or paste a video URL")
+    clone_voice = voice_mode == "Clone original speaker with Sarvam"
+    if clone_voice and not voice_clone_consent:
+        raise _ui_error("Confirm that you have the right to clone this speaker before continuing.")
     try:
         local_source = resolve_input(source, OUTPUT_DIR)
         result = video_to_video_dub(
@@ -89,16 +101,17 @@ def process_studio(
             gender=gender,
             burn_subtitles=burn_captions,
             clone_voice=clone_voice,
+            voice_clone_consent=voice_clone_consent,
+            source_language=source_language,
+            dialect_level=int(dialect),
         )
     except Exception as exc:
-        raise gr.Error(str(exc)) from exc
+        raise _ui_error(str(exc)) from exc
 
     if result.get("voice_cloned"):
-        f0_val = f"{result['f0_hz']}Hz" if result.get("f0_hz") is not None else "N/A"
-        pitch_val = result.get("pitch_offset", "+0Hz")
-        clone_info = f"Voice cloned: yes (F0: {f0_val}, pitch: {pitch_val}, voice: {result.get('voice_used', 'N/A')}). "
+        clone_info = f"Speaker identity: preserved by Sarvam ({result.get('clone_method', 'source-speaker clone')}). "
     else:
-        clone_info = f"Voice cloned: no (voice: {result.get('voice_used', 'N/A')}). "
+        clone_info = f"Speaker identity: preset voice only ({result.get('voice_used', 'N/A')}). "
 
     return result["output_video_path"], result["dubbed_audio_path"], result["subtitle_path"], (
         f"Completed {result['target_language']} dubbing. "
@@ -108,30 +121,29 @@ def process_studio(
     )
 
 
-def process_audio(audio_file: Any, language: str, gender: str, clone_voice: bool = True):
+def process_audio(audio_file: Any, language: str, gender: str, voice_mode: str, voice_clone_consent: bool, source_language: str):
     """Audio-to-Audio dubbing callback for uploaded audio files or microphone recordings."""
 
     normalized_path = _normalize_audio(audio_file)
+    clone_voice = voice_mode == "Clone original speaker with Sarvam"
+    if clone_voice and not voice_clone_consent:
+        raise _ui_error("Confirm that you have the right to clone this speaker before continuing.")
     try:
-        result = audio_to_audio_dub(normalized_path, target_language=language, gender=gender, clone_voice=clone_voice)
+        result = audio_to_audio_dub(normalized_path, target_language=language, gender=gender, clone_voice=clone_voice, voice_clone_consent=voice_clone_consent, source_language=source_language)
     except Exception as exc:
-        raise gr.Error(str(exc)) from exc
+        raise _ui_error(str(exc)) from exc
 
     lang = result.get("target_language", language)
-    f0 = result.get("f0_hz") if result.get("f0_hz") is not None else "N/A"
-    pitch_offset = result.get("pitch_offset", "+0Hz")
     if clone_voice:
-        status_msg = f"✅ Dubbed into {lang} with original speaker voice cloning (F0: {f0}Hz, pitch: {pitch_offset})."
+        status_msg = f"✅ Dubbed into {lang} with Sarvam source-speaker preservation."
     else:
-        status_msg = f"✅ Dubbed into {lang} using {result.get('voice_used', 'Edge-TTS')}."
+        status_msg = f"✅ Dubbed into {lang} using {result.get('voice_used', 'Sarvam preset voice')}."
     return result["output_audio_path"], result.get("transcribed_source", ""), result["transcreated_text"], status_msg
 
 
 def build_app():
-    try:
-        import gradio as gr
-    except ImportError as exc:
-        raise RuntimeError("Gradio is not installed. Install the UI dependencies with: pip install -r requirements.txt") from exc
+    if gr is None:
+        raise RuntimeError("Gradio is not installed. Install the UI dependencies with: pip install -r requirements.txt")
 
     languages = sorted(VOICE_MAP)
     matrix_languages = [name for name in languages if name not in {"hinglish", "tanglish", "tenglish"}]
@@ -143,7 +155,9 @@ def build_app():
                     video_file = gr.Video(label="Upload or record video", sources=["upload", "webcam"])
                     video_url = gr.Textbox(label="Or paste a video URL", placeholder="https://...")
                     language = gr.Dropdown(languages, value="hindi", label="Target language")
-                    clone_voice = gr.Checkbox(label="🎤 Clone original speaker's voice (pitch & timbre matching)", value=True)
+                    source_language = gr.Dropdown(matrix_languages, value="english", label="Source language")
+                    voice_mode = gr.Radio(["Sarvam preset voice", "Clone original speaker with Sarvam"], value="Sarvam preset voice", label="Voice mode")
+                    voice_clone_consent = gr.Checkbox(label="I have permission to clone and use this speaker's voice", value=False)
                     gender = gr.Radio(["auto", "male", "female"], value="auto", label="Voice / Gender", info="auto detects speaker gender")
                     dialect = gr.Slider(1, 3, value=2, step=1, label="Dialect / register", info="1 formal · 2 conversational · 3 street slang")
                     burn = gr.Checkbox(label="Burn regional captions into the video", value=False)
@@ -153,30 +167,33 @@ def build_app():
                     output_audio = gr.Audio(label="Localized audio", type="filepath")
                     output_srt = gr.File(label="Translated subtitles (.srt)")
                     status = gr.Markdown()
-            run.click(process_studio, [video_file, video_url, language, gender, dialect, burn, clone_voice], [output_video, output_audio, output_srt, status])
+            run.click(process_studio, [video_file, video_url, language, gender, dialect, burn, voice_mode, voice_clone_consent, source_language], [output_video, output_audio, output_srt, status])
 
         with gr.Tab("🎧 Audio mode (A2A)"):
             gr.Markdown("Upload an audio file (`.mp3`, `.wav`, `.m4a`, `.aac`, `.flac`) or record speech from your microphone for complete ASR → Transcreation → Regional Voice Dubbing.")
             with gr.Row():
                 with gr.Column():
                     audio_input = gr.Audio(sources=["upload", "microphone"], type="filepath", label="Choose Audio File (.mp3, .wav, .m4a) or Record Microphone")
-                    audio_clone_voice = clone_voice = gr.Checkbox(label="🎤 Clone original speaker's voice (pitch & timbre matching)", value=True)
                     with gr.Row():
+                        audio_source_language = gr.Dropdown(matrix_languages, value="english", label="Source language")
                         audio_language = gr.Dropdown(languages, value="hindi", label="Target language")
                         audio_gender = gr.Radio(["auto", "male", "female"], value="auto", label="Voice / Gender", info="auto detects speaker gender")
+                    audio_voice_mode = gr.Radio(["Sarvam preset voice", "Clone original speaker with Sarvam"], value="Sarvam preset voice", label="Voice mode")
+                    audio_voice_clone_consent = gr.Checkbox(label="I have permission to clone and use this speaker's voice", value=False)
                     audio_run = gr.Button("Dub Audio", variant="primary")
                 with gr.Column():
                     output_dubbed_audio = gr.Audio(label="Dubbed Regional Audio", type="filepath")
                     transcribed_box = gr.Textbox(label="Transcribed Original Speech", lines=2)
                     transcreated_box = gr.Textbox(label="Transcreated Regional Translation", lines=2)
                     audio_status = gr.Markdown()
-            audio_run.click(process_audio, [audio_input, audio_language, audio_gender, audio_clone_voice], [output_dubbed_audio, transcribed_box, transcreated_box, audio_status])
+            audio_run.click(process_audio, [audio_input, audio_language, audio_gender, audio_voice_mode, audio_voice_clone_consent, audio_source_language], [output_dubbed_audio, transcribed_box, transcreated_box, audio_status])
 
         with gr.Tab("📝 Text demo"):
             with gr.Row():
                 with gr.Column():
                     text_input = gr.Textbox(value="Don't put all your eggs in one basket", label="English text", lines=3)
                     text_language = gr.Dropdown(languages, value="hindi", label="Target language")
+                    text_dialect = gr.Slider(1, 3, value=2, step=1, label="Dialect / register", info="1 formal · 2 conversational · 3 street slang")
                     text_run = gr.Button("Transcreate", variant="primary")
                 with gr.Column():
                     transcreated_text = gr.Textbox(label="Transcreated text", lines=2)
@@ -185,11 +202,11 @@ def build_app():
                     with gr.Accordion("Developer details & raw JSON", open=False):
                         text_output = gr.JSON(label="Full Payload")
 
-            def _handle_text_dub(text, lang):
-                res = text_to_text_dub(text, lang)
+            def _handle_text_dub(text, lang, dialect):
+                res = text_to_text_dub(text, lang, dialect_level=int(dialect))
                 return res["transcreated_text"], res["detected_intent"], res["explanation"], res
 
-            text_run.click(_handle_text_dub, [text_input, text_language], [transcreated_text, detected_intent, explanation, text_output])
+            text_run.click(_handle_text_dub, [text_input, text_language, text_dialect], [transcreated_text, detected_intent, explanation, text_output])
 
         with gr.Tab("🌐 Code-mix matrix"):
             gr.Markdown("Blend any two languages with a controllable vernacular intensity and native/romanized output.")
@@ -221,5 +238,5 @@ if __name__ == "__main__":
     build_app().launch(
         server_name=os.getenv("DUBX_HOST", "127.0.0.1"),
         server_port=int(os.getenv("DUBX_PORT", "7860")),
-        theme=gr.themes.Soft()
+        theme=gr.themes.Soft(),
     )

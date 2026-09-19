@@ -66,8 +66,8 @@ DubX unifies five distinct dubbing modalities to address the entire content ecos
 ### 2.2 Mode 2: Text-to-Audio (T2A) Dubbing
 - **Objective:** Text input $\rightarrow$ transcreation $\rightarrow$ broadcast-grade regional voice synthesis.
 - **Dual Engine Stack:**
-  - *Primary:* **Sarvam Bulbul V3** (Native Indian accents, Hinglish/Tanglish cadence, speaker timbre cloning).
-  - *Fallback / Zero-Cost:* **Microsoft Edge-TTS** (100% free, zero API key, sub-1s latency, 8 Indian languages).
+  - *Preset voice:* **Sarvam Bulbul V3** (Native Indian accents, Hinglish/Tanglish cadence).
+  - *Source-speaker mode (explicit opt-in):* **Sarvam Dubbing API** preserves authorized source-speaker identity from audio/video media.
 
 ### 2.3 Mode 3: Audio-to-Audio (A2A) Dubbing
 - **Objective:** Speech-to-speech dubbing without video processing overhead (**45% faster turnaround, 70% lower compute cost**).
@@ -134,7 +134,7 @@ ffmpeg -y \
 
 ### 4.1 Supported Regional Languages & Neural Voices
 
-| Language | Code | Spoken Register | Casual Markers | Edge-TTS Voice (M / F) |
+| Language | Code | Spoken Register | Casual Markers | Sarvam Bulbul / Dubbing |
 | :--- | :--- | :--- | :--- | :--- |
 | **Hindi** | `hi` | Conversational Hinglish | *bhai, yaar, arre, boss* | `hi-IN-MadhurNeural` / `hi-IN-SwaraNeural` |
 | **Tamil** | `ta` | Spoken Tamil / Tanglish | *da, di, pa, machan* | `ta-IN-ValluvarNeural` / `ta-IN-PallaviNeural` |
@@ -221,11 +221,8 @@ flowchart TD
 | **Hindi** | **Marathi** | *Mumbaikar* | Mumbai / Pune Street | *"भावा, सगळा पैसा एकाच ठिकाणी लावू नको, मार्केटमध्ये लय रिस्क आहे!"* |
 
 #### Neural Voice Support for Dual-Language Blends:
-- **Punjabi Neural Voices (Microsoft Edge-TTS):**
-  - Male: `pa-IN-OjasNeural`
-  - Female: `pa-IN-VaaniNeural`
-- **Bilingual English/Indian Voices:** `en-IN-NeerjaNeural`, `en-IN-PrabhatNeural`, `hi-IN-MadhurNeural`.
-- **Sarvam Bulbul V3:** Trained natively on cross-lingual Indian code-mixing, allowing words from Hindi, Punjabi, Tamil, and English to be spoken in the same sentence with seamless acoustic transitions and zero accent breaks.
+- **Sarvam Bulbul V3:** Native Indic and code-mixed preset-voice synthesis for text-only output.
+- **Sarvam Dubbing API:** Opt-in source-speaker preservation for audio/video inputs; the rights-holder must explicitly confirm permission before cloning.
 
 ---
 
@@ -355,7 +352,8 @@ regionaldubbing/
 ├── pipeline/                       # Core AI Pipeline
 │   ├── asr.py                      #   Groq Whisper / Sarvam Saaras / faster-whisper
 │   ├── transcreation.py            #   Gemini 1.5 Flash transcreation engine
-│   ├── tts.py                      #   Sarvam Bulbul & Edge-TTS dual engine
+│   ├── tts.py                      #   Sarvam Bulbul preset-voice engine
+│   ├── sarvam_dubbing.py           #   Consent-gated source-speaker dubbing
 │   ├── demux.py                    #   Demucs v4 neural stem separation
 │   ├── realignment.py              #   pyrubberband phase-vocoder time-stretching
 │   └── remux.py                    #   FFmpeg dual-track remux & ducking

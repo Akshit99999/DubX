@@ -1,191 +1,79 @@
+import base64
 import os
+import sys
+import tempfile
+import types
 import unittest
-from unittest.mock import MagicMock, patch
+from pathlib import Path
+from unittest.mock import patch
 
 from dubx_core import audio_to_audio_dub, video_to_video_dub
-from pipeline.tts import _edge_tts, synthesize
-from utils.subtitles import SubtitleSegment
+from pipeline.tts import synthesize
 
 
-class TestSpeakerVoiceCloning(unittest.TestCase):
-    def test_edge_tts_accepts_pitch_and_passes_to_communicate(self):
-        with patch("edge_tts.Communicate") as mock_comm:
-            from unittest.mock import AsyncMock
-            mock_instance = MagicMock()
-            mock_instance.save = AsyncMock()
-            mock_comm.return_value = mock_instance
+class _FakeSarvamResponse:
+    audios = [base64.b64encode(b"RIFFfake-wav-data").decode("ascii")]
 
-            import asyncio
-            asyncio.run(_edge_tts("hello", "en-IN-PrabhatNeural", "out.mp3", rate="+10%", pitch="+15Hz"))
 
-            mock_comm.assert_called_once_with(
-                text="hello",
-                voice="en-IN-PrabhatNeural",
-                rate="+10%",
-                pitch="+15Hz",
-            )
-            mock_instance.save.assert_awaited_once_with("out.mp3")
+class _FakeTTS:
+    def convert(self, **_kwargs):
+        return _FakeSarvamResponse()
 
-    def test_synthesize_metadata_and_edge_matcher(self):
-        with patch("pipeline.tts.analyze_speaker_voice") as mock_analyze, \
-             patch("pipeline.tts._run_async") as mock_run:
-            mock_analyze.return_value = {
-                "f0_hz": 215.4,
-                "detected_gender": "female",
-                "gender_used": "female",
-                "pitch_offset_hz": 5,
-                "pitch_str": "+5Hz",
-            }
 
-            res = synthesize(
-                text="परीक्षण",
-                language="hindi",
-                gender="auto",
-                output_path="test_out.mp3",
-                reference_audio="dummy_ref.wav",
-                clone_voice=True,
-            )
+class _FakeSarvamClient:
+    def __init__(self, **_kwargs):
+        self.text_to_speech = _FakeTTS()
 
-            mock_analyze.assert_called_once_with("dummy_ref.wav", "auto")
-            self.assertEqual(res["output_path"], "test_out.mp3")
-            self.assertEqual(res["f0_hz"], 215.4)
-            self.assertEqual(res["pitch_offset"], "+5Hz")
-            self.assertEqual(res["gender_used"], "female")
-            self.assertEqual(res["voice_used"], "hi-IN-SwaraNeural")
-            self.assertTrue(res["cloned_voice"])
-            mock_run.assert_called_once()
 
-    def test_synthesize_elevenlabs_attempt_and_fallback(self):
-        with patch.dict(os.environ, {"ELEVENLABS_API_KEY": "fake_key_123"}), \
-             patch("pipeline.tts.analyze_speaker_voice") as mock_analyze, \
-             patch("pipeline.tts._elevenlabs_clone_and_tts") as mock_11labs, \
-             patch("pipeline.tts._run_async") as mock_run:
+class TestSarvamSpeakerWorkflow(unittest.TestCase):
+    def test_text_tts_uses_sarvam_not_edge(self):
+        with tempfile.TemporaryDirectory() as directory, \
+             patch.dict(os.environ, {"SARVAM_API_KEY": "test-key"}), \
+             patch.dict(sys.modules, {"sarvamai": types.SimpleNamespace(SarvamAI=_FakeSarvamClient)}):
+            output = str(Path(directory) / "speech.wav")
+            result = synthesize("नमस्ते", "hindi", output_path=output)
+            self.assertTrue(Path(output).is_file())
+            self.assertEqual(Path(output).read_bytes(), b"RIFFfake-wav-data")
+            self.assertEqual(result["backend"], "sarvam-bulbul:v3")
+            self.assertFalse(result["cloned_voice"])
 
-            mock_analyze.return_value = {
-                "f0_hz": 120.0,
-                "detected_gender": "male",
-                "gender_used": "male",
-                "pitch_offset_hz": -5,
-                "pitch_str": "-5Hz",
-            }
+    def test_text_tts_rejects_fake_clone_request(self):
+        with self.assertRaisesRegex(RuntimeError, "Sarvam Dubbing"):
+            synthesize("नमस्ते", "hindi", output_path="unused.wav", clone_voice=True)
 
-            mock_run.return_value = "test_out.mp3"
+    def test_audio_clone_requires_explicit_consent_and_uses_sarvam_job(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "speaker.wav"
+            source.write_bytes(b"RIFFsource")
+            audio = Path(directory) / "dub.wav"
+            srt = Path(directory) / "dub.srt"
+            srt.write_text("1\n00:00:00,000 --> 00:00:01,000\nनमस्ते\n", encoding="utf-8")
 
-            # Scenario A: ElevenLabs succeeds
-            mock_11labs.return_value = "elevenlabs:voice_abc"
-            res_success = synthesize(
-                text="परीक्षण",
-                language="hindi",
-                gender="auto",
-                output_path="test_out.mp3",
-                reference_audio="dummy_ref.wav",
-                clone_voice=True,
-            )
-            self.assertEqual(res_success["voice_used"], "elevenlabs:voice_abc")
-            self.assertTrue(res_success["cloned_voice"])
-            mock_run.assert_not_called()
+            with self.assertRaises(PermissionError):
+                audio_to_audio_dub(str(source), clone_voice=True)
 
-            # Scenario B: ElevenLabs fails -> falls back to Edge-TTS
-            mock_11labs.side_effect = RuntimeError("ElevenLabs rate limit")
-            with patch("pipeline.tts._edge_tts", return_value="test_out.mp3"):
-                res_fallback = synthesize(
-                    text="परीक्षण",
-                    language="hindi",
-                    gender="auto",
-                    output_path="test_out.mp3",
-                    reference_audio="dummy_ref.wav",
-                    clone_voice=True,
-                )
-            self.assertEqual(res_fallback["voice_used"], "hi-IN-MadhurNeural")
-            self.assertTrue(res_fallback["cloned_voice"])
-            self.assertEqual(res_fallback["pitch_offset"], "-5Hz")
-            mock_run.assert_called_once()
+            job = {"job_id": "job_123", "clone_method": "sarvam-dubbing", "exports": {"audio": str(audio), "srt": str(srt)}}
+            with patch("dubx_core.sarvam_dubbing_available", return_value=True), patch("dubx_core.dub_media", return_value=job) as mock_dub:
+                result = audio_to_audio_dub(str(source), "hindi", clone_voice=True, voice_clone_consent=True)
+            mock_dub.assert_called_once_with(str(source), "english", "hindi", "audio")
+            self.assertTrue(result["voice_cloned"])
+            self.assertEqual(result["clone_method"], "sarvam-dubbing")
+            self.assertEqual(result["alignment_strategy"], "sarvam-source-timeline")
 
-    def test_audio_to_audio_dub_passes_cloning_params_and_returns_metadata(self):
-        with patch("dubx_core._resolve_audio_file") as mock_resolve, \
-             patch("dubx_core.transcribe") as mock_transcribe, \
-             patch("dubx_core._translated_segments") as mock_trans, \
-             patch("dubx_core.synthesize") as mock_synth:
-
-            from pathlib import Path
-            mock_resolve.return_value = Path("dummy_speaker.wav")
-            mock_transcribe.return_value = [SubtitleSegment(0.0, 1.0, "Hello")]
-            mock_trans.return_value = ([SubtitleSegment(0.0, 1.0, "Hello", "नमस्ते")], "नमस्ते")
-            mock_synth.return_value = {
-                "output_path": "output.mp3",
-                "f0_hz": 130.5,
-                "speaker_f0_hz": 130.5,
-                "pitch_offset": "+6Hz",
-                "gender_used": "male",
-                "voice_used": "hi-IN-MadhurNeural",
-                "cloned_voice": True,
-            }
-
-            res = audio_to_audio_dub(
-                "dummy_speaker.wav",
-                target_language="hindi",
-                gender="auto",
-                output_path="custom_out.mp3",
-                clone_voice=True,
-            )
-
-            mock_synth.assert_called_once_with(
-                "नमस्ते",
-                "hindi",
-                gender="auto",
-                output_path="custom_out.mp3",
-                rate="+0%",
-                reference_audio="dummy_speaker.wav",
-                clone_voice=True,
-            )
-
-            self.assertTrue(res["cloned_voice"])
-            self.assertEqual(res["speaker_f0_hz"], 130.5)
-            self.assertEqual(res["pitch_offset"], "+6Hz")
-            self.assertEqual(res["voice_used"], "hi-IN-MadhurNeural")
-
-    def test_video_to_video_dub_passes_cloning_params_and_returns_metadata(self):
-        with patch("dubx_core._resolve_video_file") as mock_resolve, \
-             patch("dubx_core.extract_audio") as mock_extract, \
-             patch("dubx_core.separate_stems") as mock_separate, \
-             patch("dubx_core.transcribe") as mock_transcribe, \
-             patch("dubx_core._translated_segments") as mock_trans, \
-             patch("dubx_core.synthesize") as mock_synth, \
-             patch("dubx_core.remux_video") as mock_remux:
-
-            from pathlib import Path
-            mock_resolve.return_value = Path("dummy_video.mp4")
-            mock_extract.return_value = "extracted.wav"
-            mock_separate.return_value = ("vocals.wav", "bgm.wav")
-            mock_transcribe.return_value = [SubtitleSegment(0.0, 1.0, "Hello")]
-            mock_trans.return_value = ([SubtitleSegment(0.0, 1.0, "Hello", "नमस्ते")], "नमस्ते")
-            mock_remux.return_value = "final_video.mp4"
-            mock_synth.return_value = {
-                "output_path": "dubbed.mp3",
-                "f0_hz": 220.0,
-                "speaker_f0_hz": 220.0,
-                "pitch_offset": "+10Hz",
-                "gender_used": "female",
-                "voice_used": "hi-IN-SwaraNeural",
-                "cloned_voice": True,
-            }
-
-            res = video_to_video_dub(
-                "dummy_video.mp4",
-                target_language="hindi",
-                gender="auto",
-                clone_voice=True,
-            )
-
-            mock_synth.assert_called_once()
-            _, synth_kwargs = mock_synth.call_args
-            self.assertEqual(synth_kwargs.get("reference_audio"), "vocals.wav")
-            self.assertEqual(synth_kwargs.get("clone_voice"), True)
-
-            self.assertTrue(res["cloned_voice"])
-            self.assertEqual(res["speaker_f0_hz"], 220.0)
-            self.assertEqual(res["pitch_offset"], "+10Hz")
-            self.assertEqual(res["voice_used"], "hi-IN-SwaraNeural")
+    def test_video_clone_uses_sarvam_source_timeline(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "speaker.mp4"
+            source.write_bytes(b"fake-video")
+            video = Path(directory) / "dub.mp4"
+            audio = Path(directory) / "dub.wav"
+            srt = Path(directory) / "dub.srt"
+            srt.write_text("", encoding="utf-8")
+            job = {"job_id": "job_456", "clone_method": "sarvam-dubbing", "exports": {"video": str(video), "audio": str(audio), "srt": str(srt)}}
+            with patch("dubx_core.sarvam_dubbing_available", return_value=True), patch("dubx_core.dub_media", return_value=job) as mock_dub:
+                result = video_to_video_dub(str(source), "tamil", clone_voice=True, voice_clone_consent=True)
+            mock_dub.assert_called_once_with(str(source), "english", "tamil", "video")
+            self.assertTrue(result["voice_cloned"])
+            self.assertTrue(result["bgm_preserved"])
 
 
 if __name__ == "__main__":

@@ -10,11 +10,15 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 from typing import Any
 
 from config import language_config
 from pipeline.transcreation import OFFLINE_IDIOMS, transcreate
 from utils.syllable_budget import budget_for, trim_to_budget
+
+
+_GEMINI_RETRY_AFTER = 0.0
 
 
 OFFLINE_MIXES: dict[tuple[str, str, str], dict[str, str]] = {
@@ -70,8 +74,9 @@ def _normalise(text: str) -> str:
 
 
 def _gemini_mix(text: str, primary: str, secondary: str, intensity: int, script: str, api_key: str | None) -> dict[str, Any] | None:
+    global _GEMINI_RETRY_AFTER
     key = api_key or os.getenv("GEMINI_API_KEY")
-    if not key:
+    if not key or os.getenv("DUBX_OFFLINE_MODE") == "1" or time.monotonic() < _GEMINI_RETRY_AFTER:
         return None
     try:
         from google import genai
@@ -105,7 +110,11 @@ def _gemini_mix(text: str, primary: str, secondary: str, intensity: int, script:
         if isinstance(data, dict) and (data.get("native") or data.get("romanized")):
             return data
     except Exception as exc:
-        print(f"[DubX] Gemini code-mixing unavailable; using offline matrix: {exc}")
+        if "RESOURCE_EXHAUSTED" in str(exc) or "429" in str(exc):
+            _GEMINI_RETRY_AFTER = time.monotonic() + 60
+            print("[DubX] Gemini quota is unavailable; using the offline code-mix matrix for 60 seconds.")
+        else:
+            print(f"[DubX] Gemini code-mixing unavailable; using offline matrix: {exc}")
     return None
 
 

@@ -129,7 +129,7 @@ def language_config(language: str) -> dict:
 
 
 def voice_for(language: str, gender: str = "male") -> str:
-    """Resolve an Edge-TTS voice name from a language and gender."""
+    """Resolve a legacy per-language voice label for compatibility callers."""
 
     config = language_config(language)
     gender_key = gender.strip().lower()
@@ -138,3 +138,12 @@ def voice_for(language: str, gender: str = "male") -> str:
     if gender_key not in {"male", "female"}:
         raise ValueError("gender must be 'male' or 'female'")
     return config[gender_key]
+
+
+def sarvam_language_code(language: str) -> str:
+    """Return the language tag required by Sarvam's dubbing API."""
+
+    key = language.strip().lower()
+    aliases = {"hinglish": "hindi", "tanglish": "tamil", "tenglish": "telugu"}
+    key = aliases.get(key, key)
+    return f"{language_config(key)['code']}-IN"

@@ -5,10 +5,14 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 from typing import Any
 
 from config import language_config
 from utils.syllable_budget import SyllableBudget, budget_for, trim_to_budget
+
+
+_GEMINI_RETRY_AFTER = 0.0
 
 
 OFFLINE_IDIOMS: dict[str, dict[str, str]] = {
@@ -83,9 +87,11 @@ OFFLINE_IDIOMS: dict[str, dict[str, str]] = {
 
 SYSTEM_PROMPT = """You are an expert Indian dubbing director and transcreator.
 Never translate word-for-word. Preserve intent, emotional energy, humour, sarcasm,
-metaphors, rhetorical pauses, and modern loan words. Use natural spoken {language}.
-Keep the result within the supplied syllable budget and return JSON with keys
-detected_intent, transcreated_text, and explanation."""
+metaphors, rhetorical pauses, named entities, numbers, units, URLs, and modern loan
+words. Use natural spoken {language} in a {register} register. Do not invent facts,
+omit safety-critical qualifications, add explanations to the spoken line, or return
+Markdown. Keep the result within the supplied syllable budget. Return strict JSON
+with only detected_intent, transcreated_text, and explanation."""
 
 
 def _normalise(text: str) -> str:
@@ -93,9 +99,10 @@ def _normalise(text: str) -> str:
     return re.sub(r"\s+", " ", cleaned.strip().lower()).rstrip(".!?")
 
 
-def _gemini(text: str, language: str, budget: SyllableBudget | None, api_key: str | None) -> dict[str, Any] | None:
+def _gemini(text: str, language: str, budget: SyllableBudget | None, api_key: str | None, register: str) -> dict[str, Any] | None:
+    global _GEMINI_RETRY_AFTER
     key = api_key or os.getenv("GEMINI_API_KEY")
-    if not key:
+    if not key or os.getenv("DUBX_OFFLINE_MODE") == "1" or time.monotonic() < _GEMINI_RETRY_AFTER:
         return None
     try:
         from google import genai
@@ -107,7 +114,7 @@ def _gemini(text: str, language: str, budget: SyllableBudget | None, api_key: st
             model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
             contents=f"{budget_text}\nTranscreate this text:\n{text}",
             config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_PROMPT.format(language=language),
+                system_instruction=SYSTEM_PROMPT.format(language=language, register=register),
                 response_mime_type="application/json",
                 temperature=0.3,
             ),
@@ -122,7 +129,12 @@ def _gemini(text: str, language: str, budget: SyllableBudget | None, api_key: st
             return None
         return data
     except Exception as exc:
-        print(f"[DubX] Gemini unavailable; using offline transcreation: {exc}")
+        # Avoid hammering a quota-limited key once a provider asks us to wait.
+        if "RESOURCE_EXHAUSTED" in str(exc) or "429" in str(exc):
+            _GEMINI_RETRY_AFTER = time.monotonic() + 60
+            print("[DubX] Gemini quota is unavailable; using offline transcreation for 60 seconds.")
+        else:
+            print(f"[DubX] Gemini unavailable; using offline transcreation: {exc}")
         return None
 
 
@@ -131,13 +143,17 @@ def transcreate(
     target_language: str = "hindi",
     api_key: str | None = None,
     duration_seconds: float | None = None,
+    dialect_level: int = 2,
 ) -> dict[str, Any]:
     """Transcreate text, using Gemini when configured and an offline KB otherwise."""
 
     config = language_config(target_language)
     lang_key = target_language.lower()
+    if dialect_level not in {1, 2, 3}:
+        raise ValueError("dialect_level must be 1 (formal), 2 (conversational), or 3 (street slang)")
+    register = {1: "clear professional", 2: "warm conversational", 3: "natural youth slang"}[dialect_level]
     budget = budget_for(text, duration_seconds) if duration_seconds is not None else None
-    online = _gemini(text, config["name"], budget, api_key)
+    online = _gemini(text, config["name"], budget, api_key, register)
     if online:
         output = online.get("transcreated_text", text)
         if budget and budget_for(output, budget.duration_seconds).status == "overflow":
@@ -149,6 +165,7 @@ def transcreate(
             "explanation": online.get("explanation", "Gemini transcreation"),
             "budget": budget,
             "engine": "gemini",
+            "register": register,
         }
 
     entry = OFFLINE_IDIOMS.get(_normalise(text))
@@ -163,6 +180,7 @@ def transcreate(
             "explanation": f"Matched cultural equivalent for {config['name']}.",
             "budget": budget,
             "engine": "offline-idiom",
+            "register": register,
         }
 
     return {
@@ -172,4 +190,5 @@ def transcreate(
         "explanation": "No offline idiom match; set GEMINI_API_KEY for LLM transcreation.",
         "budget": budget,
         "engine": "offline-pass-through",
+        "register": register,
     }

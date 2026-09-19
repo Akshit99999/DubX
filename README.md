@@ -92,27 +92,24 @@ python dubx_core.py --mode t2t --input "Don't put all your eggs in one basket" -
 # 2. Text-to-Audio Dubbing (Transcreation + Speech Synthesis)
 python dubx_core.py --mode t2a --input "That's a steal at this price!" --lang tamil --gender female
 
-# 3. Audio-to-Audio Dubbing (Full Speech-to-Speech Localization)
-python dubx_core.py --mode a2a --input lecture_clip.mp3 --lang telugu
+# 3. Audio-to-Audio Dubbing with a Sarvam preset voice
+python dubx_core.py --mode a2a --input lecture_clip.mp3 --lang telugu --source-lang english
+
+# 3b. Source-speaker preservation with Sarvam Dubbing (requires rights-holder consent)
+python dubx_core.py --mode a2a --input lecture_clip.mp3 --lang telugu --source-lang english --clone-speaker --confirm-voice-consent
 
 # 4. Video-to-Video Dubbing (Lossless Video + Dubbed Audio + Separate Subtitles)
-python dubx_core.py --mode v2v --input source_video.mp4 --lang hindi
+python dubx_core.py --mode v2v --input source_video.mp4 --lang hindi --source-lang english
 
 # 5. Video-to-Video + Captions (Dubbed Audio + Styled Captions Burned into Video)
-python dubx_core.py --mode v2v_caption --input reel_clip.mp4 --lang tamil
+python dubx_core.py --mode v2v_caption --input reel_clip.mp4 --lang tamil --source-lang english
 # OR
 python dubx_core.py --mode v2v --input reel_clip.mp4 --lang tamil --caption
 ```
 
-### Supported Regional Languages & Neural Voices:
-- **Hindi (`hi`):** `hi-IN-MadhurNeural` (Male) / `hi-IN-SwaraNeural` (Female)
-- **Tamil (`ta`):** `ta-IN-ValluvarNeural` (Male) / `ta-IN-PallaviNeural` (Female)
-- **Telugu (`te`):** `te-IN-MohanNeural` (Male) / `te-IN-ShrutiNeural` (Female)
-- **Bengali (`bn`):** `bn-IN-BashkarNeural` (Male) / `bn-IN-TanishaaNeural` (Female)
-- **Marathi (`mr`):** `mr-IN-ManoharNeural` (Male) / `mr-IN-AarohiNeural` (Female)
-- **Kannada (`kn`):** `kn-IN-GaganNeural` (Male) / `kn-IN-SapnaNeural` (Female)
-- **Gujarati (`gu`):** `gu-IN-NiranjanNeural` (Male) / `gu-IN-DhwaniNeural` (Female)
-- **Malayalam (`ml`):** `ml-IN-MidhunNeural` (Male) / `ml-IN-SobhanaNeural` (Female)
+### Supported Languages & Sarvam Audio
+
+DubX supports English, Punjabi, Hindi, Tamil, Telugu, Bengali, Marathi, Kannada, Gujarati, Malayalam, and the Hinglish/Tanglish/Tenglish aliases. Text-only output uses Sarvam Bulbul v3. Audio and video can use Sarvam Dubbing’s source-speaker preservation only when the user deliberately selects that mode and confirms they have permission to clone the speaker.
 
 ---
 
@@ -123,8 +120,10 @@ flowchart LR
     A["Source Video"] --> B["1. Demucs v4\n(Vocal / BGM Separation)"]
     B --> C["2. WhisperX / Sarvam Saaras\n(ASR & Timestamps)"]
     C --> D["3. Gemini 1.5 Flash\n(Syllable-Budgeted Transcreation)"]
-    D --> E["4. Sarvam Bulbul / IndicF5\n(Voice Cloning TTS)"]
-    E --> F["5. pyrubberband & FFmpeg\n(Time-Stretching & BGM Ducking)"]
+    D --> E["4. Sarvam Bulbul v3\n(Preset Voice TTS)"]
+    B --> I["4b. Sarvam Dubbing\n(Opt-in Source Speaker Clone)"]
+    E --> F["5. FFmpeg\n(Time-Stretching & BGM Ducking)"]
+    I --> H
     D --> G["6. Subtitle Engine\n(SRT with Noto Sans)"]
     F --> H["7. Mastered Dubbed Video + SRT"]
     G --> H
@@ -148,7 +147,16 @@ The implementation described in [`implementation.md`](./implementation.md) is no
 - `pipeline/` — optional ASR, TTS, transcreation, FFmpeg, stem separation, and remuxing components.
 - `utils/` — syllable budgeting, subtitle formatting, and URL ingestion.
 
-Install the Python integrations with `pip install -r requirements.txt`, install FFmpeg separately, and copy `.env.example` to `.env` or export the keys in your shell. Keys are intentionally placeholders and are never hardcoded in the source.
+Install the Python integrations with `pip install -r requirements.txt`, install FFmpeg separately, and copy `.env.example` to `.env` or export the keys in your shell. DubX reads `SARVAM_API_KEY`, `GEMINI_API_KEY`, and `GROQ_API_KEY` from that file; keys are never hardcoded or committed.
+
+### Audio backend and speaker identity
+
+DubX does not use Edge-TTS. Text-to-audio uses Sarvam Bulbul v3 with a clearly labelled preset voice. Audio/video dubbing defaults to that same preset mode, so it does not claim the output is the original speaker.
+
+To preserve a source speaker’s vocal identity, explicitly choose **Clone original speaker with Sarvam** in the app and confirm that you have the right to clone that voice. The Sarvam Dubbing workflow then returns a source-timeline-aligned dubbed track, subtitles, and—when the source is video—a dubbed video. This opt-in is limited to audio/video inputs; text-only input has no source voice to clone.
+
+Gemini transcreation is register-aware (formal, conversational, or street slang) and is instructed to preserve named entities, numbers, units, URLs, punctuation, cultural intent, and timing budget without adding invented facts or spoken explanations.
+If Gemini reaches a provider quota, DubX pauses further Gemini attempts briefly and uses its deterministic offline idiom/code-mix fallback rather than repeatedly failing the request.
 
 The offline text demo needs no API key:
 
