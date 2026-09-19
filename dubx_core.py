@@ -92,8 +92,9 @@ def text_to_audio_dub(text: str, target_language: str = "hindi", gender: str = "
     if not output_path:
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         output_path = str(OUTPUT_DIR / f"t2a_{_safe_stem(text[:30])}_{target_language.lower()}.mp3")
-    synthesize(result["transcreated_text"], target_language, gender, output_path, rate=rate)
-    voice = config.get(gender.lower(), config.get("default", config["male"]))
+    gender_resolved = gender if gender in {"male", "female"} else "male"
+    synth_res = synthesize(result["transcreated_text"], target_language, gender_resolved, output_path, rate=rate)
+    voice = synth_res.get("voice_used") if isinstance(synth_res, dict) else config.get(gender_resolved, config.get("default", config["male"]))
     return {
         **result,
         "pillar": "Text-to-Audio",
@@ -137,11 +138,20 @@ def _resolve_video_file(video_path: Any) -> Path:
     return source
 
 
-def audio_to_audio_dub(audio_path: str | Any, target_language: str = "hindi", gender: str = "male", output_path: str | None = None, api_key: str | None = None, rate: str = "+0%") -> dict[str, Any]:
+def audio_to_audio_dub(
+    audio_path: str | Any,
+    target_language: str = "hindi",
+    gender: str = "auto",
+    output_path: str | None = None,
+    api_key: str | None = None,
+    rate: str = "+0%",
+    clone_voice: bool = True,
+) -> dict[str, Any]:
     """Mode 3: timestamped ASR, transcreation, and regional speech synthesis."""
 
     source = _resolve_audio_file(audio_path)
     config = language_config(target_language)
+
     segments = transcribe(str(source), api_key=api_key)
     if not segments:
         raise ValueError("No speech detected in input audio")
@@ -151,8 +161,32 @@ def audio_to_audio_dub(audio_path: str | Any, target_language: str = "hindi", ge
     if not output_path:
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         output_path = str(OUTPUT_DIR / f"a2a_{_safe_stem(source.stem)}_{target_language.lower()}.mp3")
-    synthesize(localized_text, target_language, gender, output_path, rate=rate)
-    voice = config.get(gender.lower(), config.get("default", config["male"]))
+
+    synth_res = synthesize(
+        localized_text,
+        target_language,
+        gender=gender,
+        output_path=output_path,
+        rate=rate,
+        reference_audio=str(source),
+        clone_voice=clone_voice,
+    )
+    if isinstance(synth_res, dict):
+        output_path = synth_res.get("output_path", output_path)
+        voice = synth_res.get("voice_used") or config.get(gender.lower(), config.get("default", config["male"]))
+        cloned = synth_res.get("cloned_voice", clone_voice)
+        speaker_f0 = synth_res.get("f0_hz")
+        pitch_offset = synth_res.get("pitch_offset", "+0Hz")
+        detected_gender = synth_res.get("detected_gender")
+        gender_used = synth_res.get("gender_used", gender)
+    else:
+        voice = config.get(gender.lower(), config.get("default", config["male"]))
+        cloned = clone_voice
+        speaker_f0 = None
+        pitch_offset = "+0Hz"
+        detected_gender = None
+        gender_used = gender
+
     return {
         "pillar": "Audio-to-Audio",
         "input_audio_path": str(source),
@@ -163,6 +197,13 @@ def audio_to_audio_dub(audio_path: str | Any, target_language: str = "hindi", ge
         "segments": localized_segments,
         "output_audio_path": output_path,
         "audio_path": output_path,
+        "cloned_voice": cloned,
+        "voice_cloned": cloned,
+        "speaker_f0_hz": speaker_f0,
+        "f0_hz": speaker_f0,
+        "pitch_offset": pitch_offset,
+        "detected_gender": detected_gender,
+        "gender_used": gender_used,
     }
 
 
@@ -182,7 +223,16 @@ def _mix_bgm(bgm_path: str, voice_path: str, output_path: str) -> str:
     return output_path
 
 
-def video_to_video_dub(video_path: str | Any, target_language: str = "hindi", gender: str = "male", output_path: str | None = None, burn_subtitles: bool = False, api_key: str | None = None, rate: str = "+0%") -> dict[str, Any]:
+def video_to_video_dub(
+    video_path: str | Any,
+    target_language: str = "hindi",
+    gender: str = "auto",
+    output_path: str | None = None,
+    burn_subtitles: bool = False,
+    api_key: str | None = None,
+    rate: str = "+0%",
+    clone_voice: bool = True,
+) -> dict[str, Any]:
     """Mode 4/5: preserve video frames, create a dual-track dub, and optionally burn captions."""
 
     source = _resolve_video_file(video_path)
@@ -194,7 +244,9 @@ def video_to_video_dub(video_path: str | Any, target_language: str = "hindi", ge
         temp = Path(temp_dir)
         extracted_audio = extract_audio(str(source), str(temp / "source.wav"))
         vocals, bgm = separate_stems(extracted_audio, str(temp / "stems"))
-        segments = transcribe(vocals or extracted_audio, api_key=api_key)
+
+        reference_audio = vocals or extracted_audio
+        segments = transcribe(reference_audio, api_key=api_key)
         if not segments:
             raise ValueError("No speech detected in video audio track")
         localized_segments, localized_text = _translated_segments(segments, target_language, api_key)
@@ -202,7 +254,31 @@ def video_to_video_dub(video_path: str | Any, target_language: str = "hindi", ge
             raise ValueError("Transcreation resulted in empty text")
 
         dubbed_audio = str(OUTPUT_DIR / f"dubbed_{base}_{target_language.lower()}.mp3")
-        synthesize(localized_text, target_language, gender, dubbed_audio, rate=rate)
+        synth_res = synthesize(
+            localized_text,
+            target_language,
+            gender=gender,
+            output_path=dubbed_audio,
+            rate=rate,
+            reference_audio=reference_audio,
+            clone_voice=clone_voice,
+        )
+        if isinstance(synth_res, dict):
+            dubbed_audio = synth_res.get("output_path", dubbed_audio)
+            voice = synth_res.get("voice_used") or config.get(gender.lower(), config.get("default", config["male"]))
+            cloned = synth_res.get("cloned_voice", clone_voice)
+            speaker_f0 = synth_res.get("f0_hz")
+            pitch_offset = synth_res.get("pitch_offset", "+0Hz")
+            detected_gender = synth_res.get("detected_gender")
+            gender_used = synth_res.get("gender_used", gender)
+        else:
+            voice = config.get(gender.lower(), config.get("default", config["male"]))
+            cloned = clone_voice
+            speaker_f0 = None
+            pitch_offset = "+0Hz"
+            detected_gender = None
+            gender_used = gender
+
         mastered_audio = dubbed_audio
         if bgm:
             mastered_audio = _mix_bgm(bgm, dubbed_audio, str(OUTPUT_DIR / f"mastered_{base}_{target_language.lower()}.wav"))
@@ -219,7 +295,6 @@ def video_to_video_dub(video_path: str | Any, target_language: str = "hindi", ge
         else:
             final_video = remux_video(str(source), mastered_audio, output_path, original_audio=extracted_audio, language_code=config["code"])
 
-    voice = config.get(gender.lower(), config.get("default", config["male"]))
     return {
         "pillar": "Video-to-Video + Captions" if burn_subtitles else "Video-to-Video",
         "input_video_path": str(source),
@@ -235,12 +310,32 @@ def video_to_video_dub(video_path: str | Any, target_language: str = "hindi", ge
         "output_video_path": final_video,
         "bgm_preserved": bool(bgm),
         "audio_tracks": ["English (Original)", f"{config['name']} (Dubbed)"],
+        "cloned_voice": cloned,
+        "voice_cloned": cloned,
+        "speaker_f0_hz": speaker_f0,
+        "f0_hz": speaker_f0,
+        "pitch_offset": pitch_offset,
+        "detected_gender": detected_gender,
+        "gender_used": gender_used,
     }
 
 
 def _print_result(result: dict[str, Any]) -> None:
     print(f"Mode:              {result.get('pillar')}")
-    for key in ("original_text", "target_language", "detected_intent", "transcreated_text", "audio_path", "output_audio_path", "subtitle_path", "output_video_path"):
+    for key in (
+        "original_text",
+        "target_language",
+        "detected_intent",
+        "transcreated_text",
+        "voice_used",
+        "cloned_voice",
+        "speaker_f0_hz",
+        "pitch_offset",
+        "audio_path",
+        "output_audio_path",
+        "subtitle_path",
+        "output_video_path",
+    ):
         if result.get(key) is not None:
             print(f"{key.replace('_', ' ').title()+':':20} {result[key]}")
 
@@ -255,7 +350,8 @@ def main() -> None:
     parser.add_argument("--mode", required=True, choices=["t2t", "mix", "t2a", "a2a", "v2v", "v2v_caption"])
     parser.add_argument("--input", required=True, help="Text, audio/video path, or URL resolved by the app layer")
     parser.add_argument("--lang", default="hindi", choices=sorted(VOICE_MAP))
-    parser.add_argument("--gender", default="male", choices=["male", "female"])
+    parser.add_argument("--gender", default="auto", choices=["auto", "male", "female"])
+    parser.add_argument("--no-clone", action="store_true", help="Disable voice cloning")
     parser.add_argument("--output", default=None)
     parser.add_argument("--caption", action="store_true", help="Burn captions for v2v")
     parser.add_argument("--rate", default="+0%")
@@ -272,9 +368,9 @@ def main() -> None:
     elif args.mode == "t2a":
         result = text_to_audio_dub(args.input, args.lang, args.gender, args.output, rate=args.rate)
     elif args.mode == "a2a":
-        result = audio_to_audio_dub(args.input, args.lang, args.gender, args.output, rate=args.rate)
+        result = audio_to_audio_dub(args.input, args.lang, args.gender, args.output, rate=args.rate, clone_voice=not args.no_clone)
     else:
-        result = video_to_video_dub(args.input, args.lang, args.gender, args.output, burn_subtitles=args.mode == "v2v_caption" or args.caption, rate=args.rate)
+        result = video_to_video_dub(args.input, args.lang, args.gender, args.output, burn_subtitles=args.mode == "v2v_caption" or args.caption, rate=args.rate, clone_voice=not args.no_clone)
     print("\n" + "=" * 72)
     print("DUBX ENGINE COMPLETE")
     _print_result(result)

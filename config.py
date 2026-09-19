@@ -133,6 +133,8 @@ def voice_for(language: str, gender: str = "male") -> str:
 
     config = language_config(language)
     gender_key = gender.strip().lower()
+    if gender_key == "auto":
+        return config.get("default", config["male"])
     if gender_key not in {"male", "female"}:
         raise ValueError("gender must be 'male' or 'female'")
     return config[gender_key]
