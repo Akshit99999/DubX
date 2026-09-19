@@ -291,6 +291,184 @@ RULE 7: SYLLABLE BUDGET
 
 ---
 
+## Subtitle Generation Engine: Bilingual, Synchronized & Production-Ready
+
+DubX generates **professional-grade subtitles alongside every dub** — not as an afterthought, but as a core pipeline output. Subtitles are critical because:
+- **Accessibility:** Hearing-impaired viewers and noisy environments.
+- **Comprehension:** Viewers often read along even when audio is dubbed (especially for unfamiliar regional accents).
+- **SEO & Discoverability:** YouTube indexes subtitle text for search ranking.
+- **YouTube Multi-Language Audio:** YouTube's MLA feature requires matching subtitle tracks per language.
+
+---
+
+### Subtitle Output Formats
+
+DubX generates **4 distinct subtitle outputs** from every dubbing run:
+
+| Output | Format | Contents | Use Case |
+| :--- | :--- | :--- | :--- |
+| **1. Original Language SRT** | `.srt` | English transcript with word-level timestamps | Archival, accessibility |
+| **2. Dubbed Language SRT** | `.srt` | Regional transcreated text (Hindi/Tamil/Telugu/etc.) synced to dubbed audio timing | YouTube upload, player embed |
+| **3. Bilingual SRT** | `.srt` | Both English + Regional on-screen simultaneously (Line 1: English, Line 2: Hindi) | Side-by-side learning, language education |
+| **4. WebVTT** | `.vtt` | Same as above in W3C standard format with styling cues | HTML5 `<track>` embed, HLS/DASH streaming |
+
+---
+
+### Subtitle Generation Pipeline
+
+```mermaid
+flowchart TD
+    ASR["ASR Output\n(Word-level timestamps from Whisper/Saaras)"] --> ALIGN["Segment Aligner\n(Maps original timestamps to\ntranscreated text segments)"]
+    
+    TRANS["Transcreated Segments\n(Regional text with syllable budgets)"] --> ALIGN
+    
+    ALIGN --> TIMING["Timing Adjuster\n- Shifts timestamps to match dubbed audio duration\n- Accounts for time-stretching offsets\n- Ensures no subtitle overlap between segments"]
+    
+    TIMING --> SRT_EN["English .srt\n(Original timestamps)"]
+    TIMING --> SRT_REG["Regional .srt\n(Adjusted to dubbed audio timing)"]
+    TIMING --> SRT_BI["Bilingual .srt\n(English line 1 + Regional line 2)"]
+    TIMING --> VTT["WebVTT .vtt\n(With styling metadata)"]
+    
+    SRT_REG --> SOFT["Softsub Embed\n(Switchable subtitle track\ninside MP4/MKV container)"]
+    SRT_REG --> HARD["Hardsub Burn-In\n(Permanently rendered into\nvideo frames with Indic fonts)"]
+```
+
+---
+
+### Subtitle Timing Synchronization
+
+The key challenge: **dubbed audio has different timing than the original**. A 2.4-second English sentence might become a 2.8-second Hindi sentence after voice synthesis and time-stretching. The subtitles must track the **dubbed audio**, not the original.
+
+```
+Original English Audio:     |----"Your time is limited"----| (0.00s → 2.40s)
+                                        ↓ Transcreation + TTS + Time-Stretch
+Dubbed Hindi Audio:         |----"आपका वक़्त सीमित है भाई"----| (0.00s → 2.75s)
+                                        ↓
+English Subtitle Timing:    00:00:00,000 --> 00:00:02,400   "Your time is limited"
+Hindi Subtitle Timing:      00:00:00,000 --> 00:00:02,750   "आपका वक़्त सीमित है भाई"
+Bilingual Subtitle:         00:00:00,000 --> 00:00:02,750   "Your time is limited"
+                                                             "आपका वक़्त सीमित है भाई"
+```
+
+---
+
+### SRT File Format Example (Bilingual Output)
+
+```srt
+1
+00:00:00,000 --> 00:00:02,750
+Your time is limited
+आपका वक़्त सीमित है भाई
+
+2
+00:00:02,750 --> 00:00:05,800
+So don't waste it living someone else's life
+तो किसी और की ज़िंदगी जीने में बर्बाद मत करो
+
+3
+00:00:05,800 --> 00:00:09,400
+Don't be trapped by dogma
+किसी और की सोच में मत फंसो भाई
+
+4
+00:00:09,400 --> 00:00:13,200
+Which is living with the results of other people's thinking
+जो दूसरों की सोच के नतीजे हैं
+```
+
+---
+
+### Indic Font Rendering: The HarfBuzz Requirement
+
+Indian scripts use **complex ligatures, conjunct consonants, and dependent vowel signs (matras)** that break in default FFmpeg text rendering:
+
+| Script | What Breaks Without HarfBuzz | Example |
+| :--- | :--- | :--- |
+| **Devanagari** (Hindi/Marathi) | Conjuncts like "प्र", "त्र", "क्ष" render as disconnected characters | प + ् + र instead of प्र |
+| **Tamil** | Vowel signs like "கொ", "கோ" detach from consonants | க + ொ instead of கொ |
+| **Telugu** | Dependent vowels and vattulu (subscript consonants) misalign | క + ్ + ర instead of క్ర |
+| **Bengali** | Juktakshar (conjuncts) like "ক্ষ", "জ্ঞ" split apart | ক + ্ + ষ instead of ক্ষ |
+
+**Solution:** Use `libass` subtitle filter with **Noto Sans** Indic font family + **HarfBuzz** text shaping engine:
+
+```bash
+# Softsub (instant, switchable track — RECOMMENDED for hackathon):
+ffmpeg -y -i dubbed_video.mp4 -i subtitles_hindi.srt \
+  -c copy -c:s mov_text -metadata:s:s:0 language=hin \
+  output_with_subs.mp4
+
+# Hardsub burn-in (permanent, with proper Indic rendering):
+ffmpeg -y -i dubbed_video.mp4 \
+  -vf "subtitles=subtitles_hindi.srt:force_style='\
+    FontName=Noto Sans Devanagari,\
+    FontSize=20,\
+    PrimaryColour=&H00FFFFFF,\
+    OutlineColour=&H00000000,\
+    BorderStyle=3,\
+    MarginV=30'" \
+  -c:v libx264 -preset veryfast -crf 22 -c:a copy \
+  output_hardsubbed.mp4
+```
+
+#### Font Map per Language:
+
+| Language | Noto Sans Font | Script |
+| :--- | :--- | :--- |
+| Hindi / Marathi | `Noto Sans Devanagari` | देवनागरी |
+| Tamil | `Noto Sans Tamil` | தமிழ் |
+| Telugu | `Noto Sans Telugu` | తెలుగు |
+| Bengali | `Noto Sans Bengali` | বাংলা |
+| Kannada | `Noto Sans Kannada` | ಕನ್ನಡ |
+| Marathi | `Noto Sans Devanagari` | देवनागरी |
+
+---
+
+### Subtitle Modes in the Gradio App
+
+#### Studio Mode (Batch Video):
+- **Auto-generated** from the transcreation pipeline (timestamps already computed).
+- User can **review and edit** subtitle text in the Tab 3 Dataframe (same as the transcreation review).
+- Exported as separate `.srt` and `.vtt` files **plus** embedded as a softsub track in the final MP4.
+- Option to hardsub burn-in for platforms that don't support subtitle tracks (Instagram Reels, Twitter/X).
+
+#### Live Mode (Real-Time Streaming):
+- **Scrolling bilingual subtitle overlay** rendered live on-screen using `gr.HTML`:
+  - Top line: Original English (grey, smaller font).
+  - Bottom line: Regional dubbed text (white, larger font, Noto Sans Indic).
+  - Each subtitle fades in as the clause is spoken and auto-scrolls.
+- **Word-by-word karaoke highlighting** (optional): As each word is spoken in the dubbed audio, the corresponding word highlights in the subtitle — proving millisecond-level synchronization to judges.
+
+```
+┌─────────────────────────────────────────────────┐
+│                                                 │
+│              [ VIDEO FRAME ]                    │
+│                                                 │
+│                                                 │
+│   Your time is limited                          │  ← English (grey, 14px)
+│   आपका वक़्त सीमित है भाई                         │  ← Hindi (white, 20px, Noto Sans Devanagari)
+└─────────────────────────────────────────────────┘
+```
+
+---
+
+### YouTube Multi-Language Audio (MLA) Export
+
+YouTube now supports **multiple audio tracks per video** (launched 2023). DubX generates the exact file structure YouTube expects:
+
+```
+upload_package/
+├── original_video.mp4              # Original video with English audio
+├── dubbed_audio_hindi.m4a          # Hindi dubbed audio track (separate file)
+├── dubbed_audio_tamil.m4a          # Tamil dubbed audio track
+├── subtitles_english.srt           # English subtitles
+├── subtitles_hindi.srt             # Hindi subtitles (synced to Hindi audio)
+└── subtitles_tamil.srt             # Tamil subtitles (synced to Tamil audio)
+```
+
+The creator uploads the original video, then adds each dubbed audio track and matching subtitle file via YouTube Studio. Viewers see a language selector in the YouTube player — exactly like watching Netflix in multiple languages.
+
+---
+
 ## Mode 2: 🎙️ Live Mode (Real-Time Streaming Dubber)
 
 ### Purpose
