@@ -24,6 +24,13 @@ VOICE_MAP = {
         "female": "hi-IN-SwaraNeural",
         "default": "hi-IN-MadhurNeural"
     },
+    "hinglish": {
+        "code": "hi-en",
+        "name": "Hinglish (Hindi + English)",
+        "male": "hi-IN-MadhurNeural",
+        "female": "en-IN-NeerjaNeural",
+        "default": "hi-IN-MadhurNeural"
+    },
     "tamil": {
         "code": "ta",
         "name": "Tamil",
@@ -31,11 +38,25 @@ VOICE_MAP = {
         "female": "ta-IN-PallaviNeural",
         "default": "ta-IN-ValluvarNeural"
     },
+    "tanglish": {
+        "code": "ta-en",
+        "name": "Tanglish (Tamil + English)",
+        "male": "ta-IN-ValluvarNeural",
+        "female": "en-IN-NeerjaNeural",
+        "default": "ta-IN-ValluvarNeural"
+    },
     "telugu": {
         "code": "te",
         "name": "Telugu",
         "male": "te-IN-MohanNeural",
         "female": "te-IN-ShrutiNeural",
+        "default": "te-IN-MohanNeural"
+    },
+    "tenglish": {
+        "code": "te-en",
+        "name": "Tenglish (Telugu + English)",
+        "male": "te-IN-MohanNeural",
+        "female": "en-IN-NeerjaNeural",
         "default": "te-IN-MohanNeural"
     },
     "bengali": {
@@ -82,8 +103,11 @@ OFFLINE_IDIOMS = {
     "don't put all your eggs in one basket": {
         "meaning": "Do not concentrate all your resources or investments in one place to mitigate risk.",
         "hindi": "सारा पैसा एक जगह मत लगाओ भाई, रिस्क बढ़ जाएगा!",
+        "hinglish": "Bhai, sara paisa ek jagah mat lagao, market mein risk bohot zyada hai!",
         "tamil": "ஒரே இடத்தில் எல்லா பணத்தையும் போடாதீங்க, ரிஸ்க் அதிகம்!",
+        "tanglish": "Macha, ore idathula ellam invest pannatha, risk romba jaasthi da!",
         "telugu": "మొత్తం డబ్బు ఒకే చోట పెట్టకు బ్రో, రిస్క్ ఎక్కువ!",
+        "tenglish": "Bro, motham money okke daggara pettaku, risk chala ekkuva untadi!",
         "bengali": "সব টাকা এক জায়গায় ঢালিস না রে, ঝুঁকি বেশি!",
         "marathi": "सगळा पैसा एकाच ठिकाणी लावू नकोस रे, धोका वाढेल!",
         "kannada": "ಎಲ್ಲಾ ದುಡ್ಡನ್ನ ಒಂದೇ ಕಡೆ ಹಾಕಬೇಡ ಮಗಾ, ರಿಸ್ಕ್ ಜಾಸ್ತಿ!"
@@ -91,8 +115,11 @@ OFFLINE_IDIOMS = {
     "that's a steal at this price": {
         "meaning": "It is an extraordinarily good bargain / very cheap.",
         "hindi": "इस कीमत पर तो भाई एकदम लूट मची है!",
+        "hinglish": "Iss price pe toh bhai ekdum crazy loot deal hai!",
         "tamil": "இந்த விலைக்கு இது செம லாபம் டா!",
+        "tanglish": "Intha price-ku ithu sema super deal machan!",
         "telugu": "ఈ ప్రైస్ కి ఇది సూపర్ డీల్ బ్రో!",
+        "tenglish": "Ee price ki idhi asalu super steal deal bro!",
         "bengali": "এই দামে তো পুরো জলের দরে পেয়ে গেলে রে!",
         "marathi": "ह्या किमतीत तर एकदम भारी डील आहे रे!",
         "kannada": "ಈ ಬೆಲೆಗೆ ಇದು ಸಖತ್ ಆಫರ್ ಮಗಾ!"
@@ -100,8 +127,11 @@ OFFLINE_IDIOMS = {
     "he hit it out of the park": {
         "meaning": "He did an exceptionally brilliant job / succeeded completely.",
         "hindi": "उसने तो भाई एकदम कमाल कर दिया!",
+        "hinglish": "Usne toh bhai ekdum ground tod performance de di!",
         "tamil": "அவன் சும்மா பிரிச்சு மேஞ்சுட்டான் டா!",
+        "tanglish": "Avan summa mass kaattitaan da!",
         "telugu": "వాడు అదరగొట్టేసాడు రా!",
+        "tenglish": "Vaadu performance tho ramp aadinchesadu bro!",
         "bengali": "ও তো ফাটিয়ে দিয়েছে রে!",
         "marathi": "त्याने तर कमालच केली राव!",
         "kannada": "ಅವನು ಧೂಳೆಬ್ಬಿಸಿಬಿಟ್ಟ ಮಗಾ!"

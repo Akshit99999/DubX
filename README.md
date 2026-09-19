@@ -54,6 +54,7 @@ OUTPUT CHOICES:
 3. **Colloquial Transcreation Engine:** Prompt-engineered LLM translation enforcing **syllable/duration budgeting** to prevent speech-video drift and translate natural slang (Hinglish/Tanglish) rather than literal textbook phrasing.
 4. **Bilingual Subtitle Generation:** Automatic synced `.srt`/`.vtt` with native Indic font shaping (HarfBuzz + Noto Sans).
 5. **Text to Regional Audio Dubbing:** Input any English text, phrase, or idiom and instantly generate culturally transcreated regional audio (MP3) without losing meaning or metaphors.
+6. **Dynamic Dual-Language Code-Mixing Matrix:** Blend ANY two languages (Hindi+Punjabi, English+Punjabi, Hinglish, Tanglish, Tenglish) with dual-script output (Romanized Latin for WhatsApp/social captions or native Indic script).
 
 ---
 

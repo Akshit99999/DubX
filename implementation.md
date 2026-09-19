@@ -156,6 +156,79 @@ ffmpeg -y \
 
 ---
 
+### 4.3 Dynamic Dual-Language Code-Mixing Matrix: Any Language A + Any Language B
+
+In real-world India, linguistic identity is fluid and code-mixed across multiple vernaculars. A Delhi creator blends **Hindi + Punjabi**, a Punjab YouTuber blends **English + Punjabi**, a Bengaluru coder blends **Kannada + English**, and a Mumbai creator blends **Hindi + Marathi + English**. 
+
+DubX implements a **Dynamic Dual-Language Code-Mixing Matrix** allowing users to select **ANY two languages** to generate authentic, culturally fluid translations:
+
+```
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│             🌐 DUBX DYNAMIC DUAL-LANGUAGE CODE-MIXING MATRIX                     │
+│                                                                                  │
+│  Input English:                                                                  │
+│    "Don't put all your eggs in one basket, the market has high volatility!"     │
+│                                                                                  │
+│  🔄 Blend Choice: HINDI + PUNJABI (Delhi / North India Creator Style):           │
+│    "भाई, सारा पैसा इक्को जगह मत लगा, मार्केट विच बहुत वड्डा रिस्क हो सकदा!"     │
+│    (Roman: "Bhai, saara paisa ikko jagah mat laa, market vich vadda risk hai!") │
+│                                                                                  │
+│  🔄 Blend Choice: ENGLISH + PUNJABI (Urban Punjab / NRI Creator Style):          │
+│    "Bro, don't invest all money in one place, bohot vadda loss ho sakda!"       │
+│                                                                                  │
+│  🔄 Blend Choice: HINDI + ENGLISH (Hinglish - Mumbai / Urban Youth):             │
+│    "Bhai, sara paisa ek jagah mat lagao, market mein risk bohot zyada hai!"      │
+│                                                                                  │
+│  🔄 Blend Choice: TAMIL + ENGLISH (Tanglish - Chennai Tech Creator):             │
+│    "Macha, ore idathula ellam invest pannatha, market risk romba jaasthi da!"   │
+│                                                                                  │
+│  🔄 Blend Choice: TELUGU + ENGLISH (Tenglish - Hyderabad Startup Style):         │
+│    "Bro, motham money okke daggara pettaku, market lo risk chala ekkuva untadi!" │
+└──────────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### Dual-Language Matrix Architecture:
+```mermaid
+flowchart TD
+    SRC["Source Text / Video Dialogue"] --> SELECTOR["Bilingual Selector Component in UI"]
+    
+    subgraph UI_Controls["User Controls"]
+        L_A["Primary Language A\n(Hindi, Punjabi, Tamil, Telugu, English...)"]
+        L_B["Secondary Language B\n(English, Punjabi, Hindi, Marathi...)"]
+        RATIO["Code-Mixing Intensity Slider\n(Level 1: 15% Loan Words ➔ Level 3: 50% Full Vernacular Blend)"]
+        SCRIPT["Script Output Preference\n(Script A / Script B / Romanized Latin Alphabet)"]
+    end
+    
+    L_A --> SELECTOR
+    L_B --> SELECTOR
+    RATIO --> SELECTOR
+    SCRIPT --> SELECTOR
+    
+    SELECTOR --> ENGINE["Gemini 1.5 Flash Code-Mixing Synthesizer\n- Prompt: Blend {Lang_A} grammar with {Lang_B} colloquial idioms\n- Output in {Script_Preference}"]
+    
+    ENGINE --> TTS["Bilingual Voice Synthesis Router\n(Selects neural voice with bilingual code-mixed capability)"]
+    TTS --> OUT["Code-Mixed Dubbed Audio + Synced Subtitles"]
+```
+
+#### Supported Language Pairs & Voice Matrix:
+| Primary Language | Secondary Language | Popular Style Name | Target Audience | Example Spoken Output |
+| :--- | :--- | :--- | :--- | :--- |
+| **Hindi** | **Punjabi** | *Hind-Punjabi* | Delhi / Punjab / Bollywood | *"भाई, सारा पैसा इक्को जगह मत ला, मार्केट विच बहुत वड्डा रिस्क है!"* |
+| **English** | **Punjabi** | *Punglish* | Chandigarh / Canadian NRI / Tech | *"Bro, don't invest all money in one place, vadda risk ho sakda!"* |
+| **Hindi** | **English** | *Hinglish* | Pan-India Creators / Gen-Z | *"Bhai, sara paisa ek jagah mat lagao, market mein risk bohot zyada hai!"* |
+| **Tamil** | **English** | *Tanglish* | Chennai / Coimbatore Tech | *"Macha, ore idathula ellam invest pannatha, risk romba jaasthi da!"* |
+| **Telugu** | **English** | *Tenglish* | Hyderabad / Vizag Creators | *"Bro, motham money okke daggara pettaku, risk chala ekkuva untadi!"* |
+| **Hindi** | **Marathi** | *Mumbaikar* | Mumbai / Pune Street | *"भावा, सगळा पैसा एकाच ठिकाणी लावू नको, मार्केटमध्ये लय रिस्क आहे!"* |
+
+#### Neural Voice Support for Dual-Language Blends:
+- **Punjabi Neural Voices (Microsoft Edge-TTS):**
+  - Male: `pa-IN-OjasNeural`
+  - Female: `pa-IN-VaaniNeural`
+- **Bilingual English/Indian Voices:** `en-IN-NeerjaNeural`, `en-IN-PrabhatNeural`, `hi-IN-MadhurNeural`.
+- **Sarvam Bulbul V3:** Trained natively on cross-lingual Indian code-mixing, allowing words from Hindi, Punjabi, Tamil, and English to be spoken in the same sentence with seamless acoustic transitions and zero accent breaks.
+
+---
+
 ## 5. Acoustic Emotion & Energy Transfer Architecture
 
 Standard TTS produces flat, robotic speech. DubX transfers the original speaker's performance dynamics onto the regional voice:
