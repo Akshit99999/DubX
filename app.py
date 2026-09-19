@@ -86,15 +86,16 @@ def process_studio(video_file: Any, video_url: str, language: str, gender: str, 
     )
 
 
-def process_live(audio_file: Any, language: str, gender: str):
-    """Batch fallback for the Live tab; it uses the same engine on a mic clip."""
+def process_audio(audio_file: Any, language: str, gender: str):
+    """Audio-to-Audio dubbing callback for uploaded audio files or microphone recordings."""
 
     normalized_path = _normalize_audio(audio_file)
     try:
         result = audio_to_audio_dub(normalized_path, target_language=language, gender=gender)
     except Exception as exc:
         raise gr.Error(str(exc)) from exc
-    return result["output_audio_path"], result["transcreated_text"]
+    status_msg = f"✅ Dubbed into {result['target_language']} using {result.get('voice_used', 'Edge-TTS')}."
+    return result["output_audio_path"], result.get("transcribed_source", ""), result["transcreated_text"], status_msg
 
 
 def build_app():
@@ -124,16 +125,21 @@ def build_app():
                     status = gr.Markdown()
             run.click(process_studio, [video_file, video_url, language, gender, dialect, burn], [output_video, output_audio, output_srt, status])
 
-        with gr.Tab("🎙️ Live mode"):
-            gr.Markdown("Record a short microphone clip for the shared ASR → transcreation → TTS cascade.")
-            live_input = gr.Audio(sources=["microphone", "upload"], type="filepath", label="Microphone")
+        with gr.Tab("🎧 Audio mode (A2A)"):
+            gr.Markdown("Upload an audio file (`.mp3`, `.wav`, `.m4a`, `.aac`, `.flac`) or record speech from your microphone for complete ASR → Transcreation → Regional Voice Dubbing.")
             with gr.Row():
-                live_language = gr.Dropdown(languages, value="hindi", label="Target language")
-                live_gender = gr.Radio(["male", "female"], value="male", label="Voice")
-            live_run = gr.Button("Dub clip", variant="primary")
-            live_output = gr.Audio(label="Localized audio", type="filepath")
-            live_text = gr.Textbox(label="Transcreated text")
-            live_run.click(process_live, [live_input, live_language, live_gender], [live_output, live_text])
+                with gr.Column():
+                    audio_input = gr.Audio(sources=["upload", "microphone"], type="filepath", label="Choose Audio File (.mp3, .wav, .m4a) or Record Microphone")
+                    with gr.Row():
+                        audio_language = gr.Dropdown(languages, value="hindi", label="Target language")
+                        audio_gender = gr.Radio(["male", "female"], value="male", label="Voice")
+                    audio_run = gr.Button("Dub Audio", variant="primary")
+                with gr.Column():
+                    output_dubbed_audio = gr.Audio(label="Dubbed Regional Audio", type="filepath")
+                    transcribed_box = gr.Textbox(label="Transcribed Original Speech", lines=2)
+                    transcreated_box = gr.Textbox(label="Transcreated Regional Translation", lines=2)
+                    audio_status = gr.Markdown()
+            audio_run.click(process_audio, [audio_input, audio_language, audio_gender], [output_dubbed_audio, transcribed_box, transcreated_box, audio_status])
 
         with gr.Tab("📝 Text demo"):
             with gr.Row():
