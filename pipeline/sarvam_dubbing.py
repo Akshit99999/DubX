@@ -26,6 +26,41 @@ def _download(url: str, destination: Path) -> str:
     return str(destination)
 
 
+def _ensure_sarvam_compat():
+    """Patch Sarvam SDK 0.1.34+ Pydantic models to tolerate backend response schema deviations."""
+    try:
+        import typing
+        import pydantic
+        from sarvamai.core.pydantic_utilities import UniversalBaseModel
+        import sarvamai.types.dubbing_start_data as dsd
+        import sarvamai.types.dubbing_start_response as dsr
+        import sarvamai.types as st
+        import sarvamai.dubbing.raw_client as rc
+
+        class PatchedDubbingStartData(UniversalBaseModel):
+            job_id: str = ""
+            status: str = "processing"
+            task_id: typing.Optional[str] = None
+            project_id: typing.Optional[str] = None
+            task_submitted: typing.Optional[bool] = None
+            model_config = pydantic.ConfigDict(extra="allow")
+
+        class PatchedDubbingStartResponse(UniversalBaseModel):
+            status: str = "success"
+            message: str = ""
+            data: PatchedDubbingStartData
+            model_config = pydantic.ConfigDict(extra="allow")
+
+        dsd.DubbingStartData = PatchedDubbingStartData
+        dsr.DubbingStartData = PatchedDubbingStartData
+        dsr.DubbingStartResponse = PatchedDubbingStartResponse
+        st.DubbingStartData = PatchedDubbingStartData
+        st.DubbingStartResponse = PatchedDubbingStartResponse
+        rc.DubbingStartResponse = PatchedDubbingStartResponse
+    except Exception:
+        pass
+
+
 def dub_media(
     media_path: str,
     source_language: str,
@@ -58,6 +93,8 @@ def dub_media(
     except ImportError as exc:
         raise SarvamDubbingError("Sarvam SDK is not installed. Run: pip install 'sarvamai>=0.1.31a1'") from exc
 
+    _ensure_sarvam_compat()
+
     source_code = sarvam_language_code(source_language)
     target_code = sarvam_language_code(target_language)
     export_options = ["audio", "srt"]
@@ -76,7 +113,17 @@ def dub_media(
     )
     job_id = created.data.job_id
     client.dubbing.upload(created.data.upload_url, media)
-    client.dubbing.start(job_id=job_id)
+    try:
+        client.dubbing.start(job_id=job_id)
+    except Exception as exc:
+        err_msg = str(exc)
+        if "DubbingStartResponse" in err_msg or "task_submitted" in err_msg or "project_id" in err_msg or "job_id" in err_msg:
+            # Sarvam SDK 0.1.34 bug: backend returns {'project_id': ..., 'task_submitted': True}
+            # which can fail DubbingStartData validation because job_id is marked required,
+            # even though the task was successfully submitted on the server.
+            pass
+        else:
+            raise
 
     terminal = {"completed", "partial_failure", "failed", "deleted"}
     deadline = time.monotonic() + timeout_seconds
