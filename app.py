@@ -8,6 +8,7 @@ Run with ``python app.py`` after installing the requirements in
 from __future__ import annotations
 
 import os
+import shutil
 from pathlib import Path
 
 from typing import Any
@@ -23,6 +24,35 @@ from utils.ingestion import resolve_input
 
 def _ui_error(message: str) -> Exception:
     return gr.Error(message) if gr is not None else ValueError(message)
+
+
+def _configure_gradio_video_probe() -> None:
+    """Keep an MP4 result displayable when Gradio's optional ffprobe is absent.
+
+    Gradio invokes ``ffprobe`` just to decide whether an output needs converting.
+    The project supplies an MP4 result already, but ``ffprobe`` is not included
+    with imageio-ffmpeg on some Windows installs; Gradio otherwise turns this
+    optional inspection failure into a failed request after dubbing completed.
+    """
+
+    if gr is None or shutil.which("ffprobe"):
+        return
+    from gradio import processing_utils
+
+    original = processing_utils.video_is_playable
+    if getattr(original, "_dubx_safe_probe", False):
+        return
+
+    def safe_video_is_playable(path: str) -> bool:
+        try:
+            return original(path)
+        except Exception:
+            # Output is an MP4.  Let the browser attempt playback rather than
+            # failing the successful dubbing job because a probe is missing.
+            return Path(path).suffix.lower() == ".mp4"
+
+    safe_video_is_playable._dubx_safe_probe = True  # type: ignore[attr-defined]
+    processing_utils.video_is_playable = safe_video_is_playable
 
 
 def _normalize_audio(audio_file: Any) -> str:
@@ -79,8 +109,19 @@ def process_studio(
     voice_mode: str,
     voice_clone_consent: bool,
     source_language: str,
+    progress: Any = gr.Progress(track_tqdm=True) if gr is not None else None,
 ):
     """Gradio callback for local upload, browser recording, or URL ingestion."""
+
+    def show_progress(event: dict[str, Any]) -> None:
+        if progress is None:
+            return
+        value = event.get("progress")
+        description = event.get("message") or "Processing video…"
+        if value is None:
+            progress(None, desc=description)
+        else:
+            progress(min(1.0, max(0.0, float(value))), desc=description)
 
     if isinstance(video_file, dict):
         v = video_file.get("video")
@@ -94,7 +135,8 @@ def process_studio(
     if clone_voice and not voice_clone_consent:
         raise _ui_error("Confirm that you have the right to clone this speaker before continuing.")
     try:
-        local_source = resolve_input(source, OUTPUT_DIR)
+        show_progress({"message": "Checking video source…", "progress": 0.01})
+        local_source = resolve_input(source, OUTPUT_DIR, progress_callback=show_progress)
         result = video_to_video_dub(
             local_source,
             target_language=language,
@@ -104,6 +146,7 @@ def process_studio(
             voice_clone_consent=voice_clone_consent,
             source_language=source_language,
             dialect_level=int(dialect),
+            progress_callback=show_progress,
         )
     except Exception as exc:
         raise _ui_error(str(exc)) from exc
@@ -145,11 +188,13 @@ def build_app():
     if gr is None:
         raise RuntimeError("Gradio is not installed. Install the UI dependencies with: pip install -r requirements.txt")
 
+    _configure_gradio_video_probe()
+
     languages = sorted(VOICE_MAP)
     matrix_languages = [name for name in languages if name not in {"hinglish", "tanglish", "tenglish"}]
     voice_modes = [
-        "Sarvam preset voice",
         "Clone original speaker with Sarvam",
+        "Sarvam preset voice",
     ]
     with gr.Blocks(title="DubX Regional Dubbing Studio") as demo:
         gr.Markdown("# DubX\nRegional AI dubbing with a simple 3-input → 3-output workflow.")
@@ -157,10 +202,10 @@ def build_app():
             with gr.Row():
                 with gr.Column():
                     video_file = gr.Video(label="Upload or record video", sources=["upload", "webcam"])
-                    video_url = gr.Textbox(label="Or paste a YouTube/video URL", placeholder="https://www.youtube.com/watch?v=...")
+                    video_url = gr.Textbox(label="Or paste a YouTube video or Short URL", placeholder="https://www.youtube.com/watch?v=… or https://www.youtube.com/shorts/…")
                     language = gr.Dropdown(languages, value="hindi", label="Target language")
                     source_language = gr.Dropdown(matrix_languages, value="english", label="Source language")
-                    voice_mode = gr.Radio(voice_modes, value="Sarvam preset voice", label="Voice mode", info="Sarvam preset voice uses Bulbul v3 (~3s). Clone original speaker runs Sarvam Dubbing cloud pipeline (3-5 mins).")
+                    voice_mode = gr.Radio(voice_modes, value="Clone original speaker with Sarvam", label="Voice mode", info="Original-speaker mode preserves the source voice, language context, and timeline. It requires consent and can take several minutes; live progress is shown while it runs.")
                     voice_clone_consent = gr.Checkbox(label="I have permission to clone and use this speaker's voice (Sarvam only)", value=False)
                     gender = gr.Radio(["auto", "male", "female"], value="auto", label="Voice / Gender", info="auto detects speaker gender")
                     dialect = gr.Slider(1, 3, value=2, step=1, label="Dialect / register", info="1 formal · 2 conversational · 3 street slang")
@@ -182,7 +227,7 @@ def build_app():
                         audio_source_language = gr.Dropdown(matrix_languages, value="english", label="Source language")
                         audio_language = gr.Dropdown(languages, value="hindi", label="Target language")
                         audio_gender = gr.Radio(["auto", "male", "female"], value="auto", label="Voice / Gender", info="auto detects speaker gender")
-                    audio_voice_mode = gr.Radio(voice_modes, value="Sarvam preset voice", label="Voice mode", info="Sarvam preset voice uses Bulbul v3 (~3s). Clone original speaker runs Sarvam Dubbing cloud pipeline (3-5 mins).")
+                    audio_voice_mode = gr.Radio(voice_modes, value="Clone original speaker with Sarvam", label="Voice mode", info="Original-speaker mode requires consent and returns Sarvam's timeline-aligned dub.")
                     audio_voice_clone_consent = gr.Checkbox(label="I have permission to clone and use this speaker's voice (Sarvam only)", value=False)
                     audio_run = gr.Button("Dub Audio", variant="primary")
                 with gr.Column():
@@ -235,7 +280,7 @@ def build_app():
                 return res["transcreated_text"], res.get("style", f"{prim} + {sec}"), res
 
             mix_run.click(_handle_mix, [mix_input, mix_primary, mix_secondary, mix_intensity, mix_script], [blended_output, blended_style, mix_output])
-    return demo
+    return demo.queue(default_concurrency_limit=1)
 
 
 if __name__ == "__main__":

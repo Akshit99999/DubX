@@ -16,7 +16,7 @@ import sys
 import tempfile
 from dataclasses import asdict, is_dataclass
 from pathlib import Path
-from typing import Any, Coroutine, TypeVar
+from typing import Any, Callable, Coroutine, TypeVar
 
 from config import OUTPUT_DIR, VOICE_MAP, language_config
 from pipeline.asr import transcribe
@@ -30,6 +30,14 @@ from utils.subtitles import SubtitleSegment, write_subtitles
 
 
 T = TypeVar("T")
+ProgressCallback = Callable[[dict[str, Any]], None]
+
+
+def _report(callback: ProgressCallback | None, stage: str, message: str, progress: float | None = None) -> None:
+    """Emit an optional, UI-friendly processing event."""
+
+    if callback:
+        callback({"stage": stage, "message": message, "progress": progress})
 
 
 def _safe_stem(value: str, fallback: str = "dubx") -> str:
@@ -134,7 +142,7 @@ def _resolve_audio_file(audio_path: Any) -> Path:
     return source
 
 
-def _resolve_video_file(video_path: Any) -> Path:
+def _resolve_video_file(video_path: Any, progress_callback: ProgressCallback | None = None) -> Path:
     if isinstance(video_path, dict):
         v = video_path.get("video")
         video_path = v.get("path") if isinstance(v, dict) else (video_path.get("path") or video_path.get("name"))
@@ -144,7 +152,7 @@ def _resolve_video_file(video_path: Any) -> Path:
     if raw_path.startswith(("http://", "https://")):
         from utils.ingestion import resolve_input
 
-        raw_path = resolve_input(raw_path, OUTPUT_DIR)
+        raw_path = resolve_input(raw_path, OUTPUT_DIR, progress_callback=progress_callback)
     source = Path(raw_path)
     if not source.is_file():
         raise FileNotFoundError(f"Input video file not found: {video_path}")
@@ -199,6 +207,7 @@ def audio_to_audio_dub(
     voice_clone_consent: bool = False,
     source_language: str = "english",
     dialect_level: int = 2,
+    progress_callback: ProgressCallback | None = None,
 ) -> dict[str, Any]:
     """Mode 3: timestamped ASR, transcreation, and regional speech synthesis."""
 
@@ -210,12 +219,17 @@ def audio_to_audio_dub(
             raise PermissionError("Confirm that you have the right to clone this speaker before enabling source-speaker cloning.")
         if not sarvam_dubbing_available():
             raise RuntimeError("SARVAM_API_KEY is required for source-speaker cloning.")
-        job = dub_media(str(source), source_language, target_language, "audio")
+        _report(progress_callback, "clone", "Sending audio for source-speaker dubbing…", 0.10)
+        dub_kwargs = {"progress_callback": progress_callback} if progress_callback else {}
+        job = dub_media(str(source), source_language, target_language, "audio", **dub_kwargs)
+        _report(progress_callback, "complete", "Dubbed audio and timed subtitles are ready.", 1.0)
         return _sarvam_audio_result(source, target_language, source_language, job)
 
+    _report(progress_callback, "transcribe", "Transcribing speech with timestamps…", 0.20)
     segments = transcribe(str(source), api_key=api_key)
     if not segments:
         raise ValueError("No speech detected in input audio")
+    _report(progress_callback, "translate", "Transcreating with full dialogue context…", 0.45)
     localized_segments, localized_text = _translated_segments(segments, target_language, api_key, dialect_level)
     if not localized_text.strip():
         raise ValueError("Transcreation resulted in empty text")
@@ -223,6 +237,7 @@ def audio_to_audio_dub(
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         output_path = str(OUTPUT_DIR / f"a2a_{_safe_stem(source.stem)}_{target_language.lower()}.wav")
 
+    _report(progress_callback, "synthesize", "Generating localized speech…", 0.72)
     synth_res = synthesize(
         localized_text,
         target_language,
@@ -247,6 +262,7 @@ def audio_to_audio_dub(
         detected_gender = None
         gender_used = gender
 
+    _report(progress_callback, "complete", "Localized audio is ready.", 1.0)
     return {
         "pillar": "Audio-to-Audio",
         "input_audio_path": str(source),
@@ -297,10 +313,12 @@ def video_to_video_dub(
     voice_clone_consent: bool = False,
     source_language: str = "english",
     dialect_level: int = 2,
+    progress_callback: ProgressCallback | None = None,
 ) -> dict[str, Any]:
     """Mode 4/5: preserve video frames, create a dual-track dub, and optionally burn captions."""
 
-    source = _resolve_video_file(video_path)
+    _report(progress_callback, "prepare", "Preparing video for dubbing…", 0.30)
+    source = _resolve_video_file(video_path, progress_callback=progress_callback)
     config = language_config(target_language)
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     base = _safe_stem(source.stem)
@@ -310,7 +328,9 @@ def video_to_video_dub(
             raise PermissionError("Confirm that you have the right to clone this speaker before enabling source-speaker cloning.")
         if not sarvam_dubbing_available():
             raise RuntimeError("SARVAM_API_KEY is required for source-speaker cloning.")
-        job = dub_media(str(source), source_language, target_language, "video")
+        _report(progress_callback, "clone", "Uploading video for source-speaker dubbing…", 0.35)
+        dub_kwargs = {"progress_callback": progress_callback} if progress_callback else {}
+        job = dub_media(str(source), source_language, target_language, "video", **dub_kwargs)
         exports = job["exports"]
         final_video = exports["video"]
         if burn_subtitles:
@@ -318,6 +338,7 @@ def video_to_video_dub(
             # burn that exact track, not the original source audio.
             final_video = output_path or str(OUTPUT_DIR / f"v2v_{base}_{target_language.lower()}_with_captions.mp4")
             burn_captions(exports["video"], exports["audio"], exports["srt"], final_video)
+        _report(progress_callback, "complete", "Dubbed video and timestamped subtitles are ready.", 1.0)
         return {
             "pillar": "Video-to-Video + Captions" if burn_subtitles else "Video-to-Video",
             "input_video_path": str(source),
@@ -348,6 +369,7 @@ def video_to_video_dub(
 
     with tempfile.TemporaryDirectory(prefix="dubx_", dir=OUTPUT_DIR) as temp_dir:
         temp = Path(temp_dir)
+        _report(progress_callback, "audio", "Extracting the source audio…", 0.35)
         extracted_audio = extract_audio(str(source), str(temp / "source.wav"))
         # Demucs can add minutes on CPU and is only needed to mix a separately
         # mastered accompaniment. The fast path keeps the original track as a
@@ -358,14 +380,17 @@ def video_to_video_dub(
             vocals, bgm = separate_stems(extracted_audio, str(temp / "stems"))
 
         reference_audio = vocals or extracted_audio
+        _report(progress_callback, "transcribe", "Transcribing speech with timestamps…", 0.48)
         segments = transcribe(reference_audio, api_key=api_key)
         if not segments:
             raise ValueError("No speech detected in video audio track")
+        _report(progress_callback, "translate", "Transcreating with full dialogue context…", 0.62)
         localized_segments, localized_text = _translated_segments(segments, target_language, api_key, dialect_level)
         if not localized_text.strip():
             raise ValueError("Transcreation resulted in empty text")
 
         dubbed_audio = str(OUTPUT_DIR / f"dubbed_{base}_{target_language.lower()}.wav")
+        _report(progress_callback, "synthesize", "Generating localized speech…", 0.76)
         synth_res = synthesize(
             localized_text,
             target_language,
@@ -401,11 +426,13 @@ def video_to_video_dub(
         if not output_path:
             suffix = "with_captions" if burn_subtitles else "clean"
             output_path = str(OUTPUT_DIR / f"v2v_{base}_{target_language.lower()}_{suffix}.mp4")
+        _report(progress_callback, "package", "Packaging translated video and subtitle track…", 0.90)
         if burn_subtitles:
             final_video = burn_captions(str(source), mastered_audio, srt_path, output_path)
         else:
             final_video = remux_video(str(source), mastered_audio, output_path, original_audio=extracted_audio, language_code=config["code"])
 
+    _report(progress_callback, "complete", "Dubbed video and timestamped subtitles are ready.", 1.0)
     return {
         "pillar": "Video-to-Video + Captions" if burn_subtitles else "Video-to-Video",
         "input_video_path": str(source),

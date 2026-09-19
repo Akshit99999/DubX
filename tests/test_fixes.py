@@ -8,7 +8,7 @@ import numpy as np
 
 from app import _normalize_audio
 from dubx_core import text_to_text_dub
-from utils.ingestion import resolve_input
+from utils.ingestion import is_youtube_url, resolve_input
 from utils.subtitles import SubtitleSegment
 from utils.syllable_budget import count_syllables
 
@@ -45,6 +45,12 @@ class TestDubXFixes(unittest.TestCase):
         finally:
             if os.path.exists(temp_path):
                 os.remove(temp_path)
+
+    def test_youtube_watch_and_short_urls_are_recognized(self):
+        self.assertTrue(is_youtube_url("https://www.youtube.com/watch?v=abc123"))
+        self.assertTrue(is_youtube_url("https://www.youtube.com/shorts/abc123"))
+        self.assertTrue(is_youtube_url("https://youtu.be/abc123"))
+        self.assertFalse(is_youtube_url("https://example.com/shorts/abc123"))
 
     def test_count_syllables_indic(self):
         # Devanagari Hindi

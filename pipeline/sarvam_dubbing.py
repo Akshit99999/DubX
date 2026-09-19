@@ -129,6 +129,10 @@ def dub_media(
     if media_kind not in {"audio", "video"}:
         raise ValueError("media_kind must be 'audio' or 'video'")
 
+    def report(stage: str, message: str, progress: float | None = None, **extra: Any) -> None:
+        if progress_callback:
+            progress_callback({"stage": stage, "message": message, "progress": progress, **extra})
+
     try:
         from sarvamai import SarvamAI
     except ImportError as exc:
@@ -149,6 +153,7 @@ def dub_media(
         fast_mode = False
 
     client = SarvamAI(api_subscription_key=os.environ["SARVAM_API_KEY"])
+    report("clone", "Creating source-speaker dubbing job…", 0.38)
     created = client.dubbing.create(
         source_language_code=source_code,
         target_language_codes=[target_code],
@@ -159,7 +164,9 @@ def dub_media(
         job_name=media.name,
     )
     job_id = created.data.job_id
+    report("upload", "Uploading source media for voice analysis…", 0.42, job_id=job_id)
     client.dubbing.upload(created.data.upload_url, media)
+    report("clone", "Source uploaded; Sarvam is translating and aligning voices…", 0.48, job_id=job_id)
     try:
         client.dubbing.start(job_id=job_id)
     except Exception as exc:
@@ -177,11 +184,19 @@ def dub_media(
     poll_interval = min(5, max(2, poll_seconds))
     while True:
         job = client.dubbing.get_live_status(job_id=job_id).data
+        provider_progress = getattr(job, "progress", None)
+        try:
+            normalized_progress = 0.48 + max(0.0, min(float(provider_progress), 100.0)) * 0.34 / 100.0
+        except (TypeError, ValueError):
+            normalized_progress = None
         event = {
             "job_id": job_id,
             "status": getattr(job, "status", "unknown"),
-            "progress": getattr(job, "progress", None),
+            "progress": normalized_progress,
+            "provider_progress": provider_progress,
             "step": getattr(job, "current_step_label", None),
+            "stage": "clone",
+            "message": getattr(job, "current_step_label", None) or "Sarvam is translating and aligning voices…",
         }
         if progress_callback:
             progress_callback(event)
@@ -195,6 +210,7 @@ def dub_media(
     if getattr(job, "status", None) == "failed":
         raise SarvamDubbingError(getattr(job, "error_message", None) or f"Sarvam dubbing job {job_id} failed")
 
+    report("export", "Rendering timed subtitles and dubbed media…", 0.84, job_id=job_id)
     wanted = {(target_code, export_type) for export_type in export_options}
     deadline = time.monotonic() + timeout_seconds
     poll_interval = 3
@@ -224,6 +240,7 @@ def dub_media(
         export_type = item.export_type
         suffix = suffixes.get(export_type, ".bin")
         target = OUTPUT_DIR / f"sarvam_{stem}_{target_language}_{export_type}{suffix}"
+        report("download", f"Downloading {export_type} export…", 0.91, job_id=job_id)
         downloaded[export_type] = _download(url, target)
 
     required = {"audio", "srt"}
@@ -242,6 +259,7 @@ def dub_media(
     missing = required - set(downloaded)
     if missing:
         raise SarvamDubbingError(f"Sarvam job {job_id} completed without usable exports: {', '.join(sorted(missing))}")
+    report("complete", "Sarvam dubbing export is ready.", 0.98, job_id=job_id)
     return {
         "job_id": job_id,
         "source_language_code": source_code,

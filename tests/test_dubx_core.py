@@ -1,6 +1,8 @@
 import unittest
+from unittest.mock import patch
 
 from dubx_core import dual_language_code_mix, text_to_text_dub
+from pipeline.transcreation import transcreate_batch
 from utils.subtitles import SubtitleSegment, format_srt, format_vtt
 from utils.syllable_budget import budget_for, count_syllables
 
@@ -43,6 +45,20 @@ class DubXOfflineTests(unittest.TestCase):
         result = dual_language_code_mix("Subscribe to the app", "malayalam", "english", script="romanized")
         self.assertEqual(result["script"], "romanized")
         self.assertTrue(result["transcreated_text"])
+
+    def test_batch_translation_receives_dialogue_context(self):
+        segments = [
+            SubtitleSegment(0, 1, "Maya picked up the package."),
+            SubtitleSegment(1, 2, "She opened it."),
+            SubtitleSegment(2, 3, "It was fragile."),
+        ]
+        with patch("pipeline.transcreation._astra_batch", return_value={0: "a", 1: "b", 2: "c"}) as batch:
+            translated = transcreate_batch(segments, "hindi", api_key="test-key")
+        request = batch.call_args.args[0]
+        self.assertIn("Maya picked up the package.", request["source_context"])
+        self.assertEqual(request["segments"][1]["context_before"], "Maya picked up the package.")
+        self.assertEqual(request["segments"][1]["context_after"], "It was fragile.")
+        self.assertEqual([item.translated_text for item in translated], ["a", "b", "c"])
 
 
 if __name__ == "__main__":

@@ -10,6 +10,7 @@ from typing import Any
 
 from config import language_config
 from utils.syllable_budget import SyllableBudget, budget_for, trim_to_budget
+from utils.subtitles import SubtitleSegment
 
 
 _GEMINI_RETRY_AFTER = 0.0
@@ -100,8 +101,11 @@ Never translate word-for-word. Preserve intent, emotional energy, humour, sarcas
 metaphors, rhetorical pauses, named entities, numbers, units, URLs, and modern loan
 words. Use natural spoken {language} in a {register} register. Do not invent facts,
 omit safety-critical qualifications, or add explanations to the spoken lines.
-You will receive a JSON object with dialogue segments. Each segment has an "id", "text",
-and "target_syllables". Transcreate each segment into natural spoken {language} within budget.
+You will receive a JSON object with the full source dialogue and timestamped dialogue segments.
+Use the full dialogue and each segment's immediate before/after context to resolve pronouns,
+tone, callbacks, ambiguity, and fragments. Translate only the segment's "text"; never copy
+context into its result. Each segment has an "id", "text", and "target_syllables".
+Transcreate each segment into natural spoken {language} within budget.
 Return a strict JSON object with a single key "segments": an array of objects, where each object has:
 - "id": integer id matching the input segment
 - "transcreated_text": string localized translation
@@ -180,7 +184,7 @@ def _astra(text: str, language: str, budget: SyllableBudget | None, api_key: str
 
 
 def _astra_batch(
-    items: list[dict[str, Any]],
+    items: dict[str, Any],
     language: str,
     api_key: str | None,
     register: str,
@@ -270,7 +274,7 @@ def _gemini(text: str, language: str, budget: SyllableBudget | None, api_key: st
 
 
 def _gemini_batch(
-    items: list[dict[str, Any]],
+    items: dict[str, Any],
     language: str,
     api_key: str | None,
     register: str,
@@ -425,34 +429,30 @@ def transcreate_batch(
             results.append(SubtitleSegment(seg.start, seg.end, text, out_text))
             continue
 
-        # Check cache (instant 0ms)
-        cache_key = (norm_key, lang_key, dialect_level)
-        if cache_key in _TRANSCREATION_CACHE:
-            out_text = _TRANSCREATION_CACHE[cache_key]["transcreated_text"]
-            if budget and budget_for(out_text, duration).status == "overflow":
-                out_text = trim_to_budget(out_text, budget.target_syllables)
-            results.append(SubtitleSegment(seg.start, seg.end, text, out_text))
-            continue
-
-        # Needs translation
+        # Do not reuse a line-level translation cache here: the same phrase can
+        # mean something different with different surrounding dialogue.
         results.append(SubtitleSegment(seg.start, seg.end, text, ""))
         to_translate_indices.append(i)
         batch_items.append({
             "id": i,
             "text": text,
             "target_syllables": budget.target_syllables,
+            "context_before": " ".join(item.text.strip() for item in segments[max(0, i - 2):i] if item.text.strip()),
+            "context_after": " ".join(item.text.strip() for item in segments[i + 1:i + 3] if item.text.strip()),
         })
 
     if not batch_items:
         return results
 
-    # Attempt Astra 6 batch first
-    batch_res = _astra_batch(batch_items, config["name"], api_key, register)
+    context = " ".join(seg.text.strip() for seg in segments if seg.text.strip())[:12000]
+    request_items = {"source_context": context, "segments": batch_items}
+
+    # Both providers receive complete dialogue rather than isolated subtitle
+    # lines, so translation context survives a batch request.
+    batch_res = _astra_batch(request_items, config["name"], api_key, register)
     if not batch_res:
         # Fall back to Gemini batch
-        batch_res = _gemini_batch(batch_items, config["name"], api_key, register)
-
-    context = " ".join(seg.text.strip() for seg in segments if seg.text.strip())
+        batch_res = _gemini_batch(request_items, config["name"], api_key, register)
 
     for idx in to_translate_indices:
         seg = results[idx]
