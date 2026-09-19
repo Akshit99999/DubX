@@ -70,9 +70,9 @@ def burn_captions(source_video: str, dubbed_audio: str, subtitle_path: str, outp
     # libass's opaque rectangular background (BorderStyle=3).
     vf = (
         f"subtitles='{clean_sub}':"
-        "force_style='Alignment=2,FontSize=20,PrimaryColour=&H00FFFFFF,"
+        "force_style='Alignment=2,FontSize=16,PrimaryColour=&H00FFFFFF,"
         "OutlineColour=&H00000000,BackColour=&H80000000,BorderStyle=1,"
-        "Outline=2.5,Shadow=1.2,MarginV=28,WrapStyle=2'"
+        "Outline=2,Shadow=1,MarginV=24,MarginL=70,MarginR=70,WrapStyle=2'"
     )
     _run(["ffmpeg", "-y", "-i", source_video, "-i", dubbed_audio, "-vf", vf, "-c:v", "libx264", "-preset", "ultrafast", "-crf", "22", "-c:a", "aac", "-b:a", "192k", "-map", "0:v:0", "-map", "1:a:0", output_video])
     return output_video
