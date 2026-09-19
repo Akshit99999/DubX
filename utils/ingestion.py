@@ -5,6 +5,7 @@ from __future__ import annotations
 import shutil
 import subprocess
 import sys
+import os
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -39,11 +40,19 @@ def resolve_input(source: str | dict | Path, output_dir: str | Path) -> str:
         destination = Path(output_dir)
         destination.mkdir(parents=True, exist_ok=True)
         template = str(destination / "source_%(id)s.%(ext)s")
+        try:
+            max_height = max(144, int(os.getenv("DUBX_YOUTUBE_MAX_HEIGHT", "720")))
+        except ValueError:
+            max_height = 720
+        format_selector = f"bv*[height<={max_height}]+ba/b[height<={max_height}]/b"
         command = yt_dlp_command + [
             "--no-playlist",
             "--no-progress",
             "--windows-filenames",
-            "-f", "bv*+ba/b",
+            "--concurrent-fragments", "4",
+            "--retries", "3",
+            "--fragment-retries", "3",
+            "-f", format_selector,
             "--merge-output-format", "mp4",
             "-o", template,
             source_str,

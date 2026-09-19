@@ -175,6 +175,10 @@ python app.py
 
 Studio mode accepts a local upload/recording or a YouTube URL. DubX downloads a single video with `yt-dlp`; only download material you are allowed to process.
 
+### Fast video processing
+
+Video mode uses a low-latency default: YouTube downloads are capped at 720p, translation is batched, cached TTS is reused, Demucs stem separation is skipped, and the tiny local Whisper model is used only when hosted ASR is unavailable. This normally removes the largest local delays. To enable the slower BGM-preserving stem mix, set `DUBX_FAST_MODE=0` and `DUBX_PRESERVE_BGM=1`. Source-speaker cloning remains dependent on Sarvam's remote dubbing job and can still take longer than preset-voice mode because the provider must analyze, translate, align, and render the source voice.
+
 Run the offline verification suite with:
 
 ```bash

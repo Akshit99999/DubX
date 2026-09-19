@@ -37,6 +37,12 @@ def _safe_stem(value: str, fallback: str = "dubx") -> str:
     return stem[:60] or fallback
 
 
+def _fast_mode() -> bool:
+    """Use the low-latency media path unless the user explicitly opts out."""
+
+    return os.getenv("DUBX_FAST_MODE", "1").strip().lower() not in {"0", "false", "no", "off"}
+
+
 def text_to_text_dub(text: str, target_language: str = "hindi", api_key: str | None = None, duration_seconds: float | None = None, dialect_level: int = 2) -> dict[str, Any]:
     """Mode 1: translate English text into colloquial regional speech."""
 
@@ -343,7 +349,13 @@ def video_to_video_dub(
     with tempfile.TemporaryDirectory(prefix="dubx_", dir=OUTPUT_DIR) as temp_dir:
         temp = Path(temp_dir)
         extracted_audio = extract_audio(str(source), str(temp / "source.wav"))
-        vocals, bgm = separate_stems(extracted_audio, str(temp / "stems"))
+        # Demucs can add minutes on CPU and is only needed to mix a separately
+        # mastered accompaniment. The fast path keeps the original track as a
+        # selectable audio track and avoids that serial CPU-heavy stage.
+        if _fast_mode() or os.getenv("DUBX_PRESERVE_BGM", "0").strip().lower() in {"0", "false", "no", "off"}:
+            vocals, bgm = None, None
+        else:
+            vocals, bgm = separate_stems(extracted_audio, str(temp / "stems"))
 
         reference_audio = vocals or extracted_audio
         segments = transcribe(reference_audio, api_key=api_key)
@@ -418,6 +430,7 @@ def video_to_video_dub(
         "gender_used": gender_used,
         "clone_method": synth_res.get("clone_method", "none") if isinstance(synth_res, dict) else "none",
         "alignment_strategy": "single-track",
+        "performance_mode": "fast" if _fast_mode() else "quality",
     }
 
 

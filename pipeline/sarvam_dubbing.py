@@ -138,9 +138,15 @@ def dub_media(
 
     source_code = sarvam_language_code(source_language)
     target_code = sarvam_language_code(target_language)
+    fast_mode = os.getenv("DUBX_FAST_MODE", "1").strip().lower() not in {"0", "false", "no", "off"}
+    # A Sarvam video export already contains its dubbed audio. In fast mode we
+    # avoid asking the service to render/download a second standalone audio
+    # export; we extract that exact embedded track locally after downloading.
     export_options = ["audio", "srt"]
     if media_kind == "video":
-        export_options.insert(0, "video")
+        export_options = ["video", "srt"] if fast_mode else ["video", "audio", "srt"]
+    else:
+        fast_mode = False
 
     client = SarvamAI(api_subscription_key=os.environ["SARVAM_API_KEY"])
     created = client.dubbing.create(
@@ -222,7 +228,17 @@ def dub_media(
 
     required = {"audio", "srt"}
     if media_kind == "video":
-        required.add("video")
+        required = {"video", "srt"}
+
+    if media_kind == "video" and "audio" not in downloaded:
+        # Keep the audio path contract stable for the UI/CLI while avoiding a
+        # duplicate Sarvam export in the low-latency video path.
+        from pipeline.demux import extract_audio
+
+        extracted_audio = OUTPUT_DIR / f"sarvam_{stem}_{target_language}_audio.wav"
+        extract_audio(downloaded["video"], str(extracted_audio))
+        downloaded["audio"] = str(extracted_audio)
+
     missing = required - set(downloaded)
     if missing:
         raise SarvamDubbingError(f"Sarvam job {job_id} completed without usable exports: {', '.join(sorted(missing))}")

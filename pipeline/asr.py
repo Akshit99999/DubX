@@ -67,9 +67,12 @@ def _faster_whisper(audio_path: str, model_name: str) -> list[SubtitleSegment] |
         return None
 
 
-def transcribe(audio_path: str, api_key: str | None = None, model_name: str = "base") -> list[SubtitleSegment]:
+def transcribe(audio_path: str, api_key: str | None = None, model_name: str | None = None) -> list[SubtitleSegment]:
     """Return timestamped segments or an actionable error when no ASR is configured."""
 
+    if not model_name:
+        fast = os.getenv("DUBX_FAST_MODE", "1").strip().lower() not in {"0", "false", "no", "off"}
+        model_name = os.getenv("DUBX_WHISPER_MODEL", "tiny" if fast else "base")
     segments = _groq(audio_path, api_key) or _faster_whisper(audio_path, model_name)
     if not segments:
         raise RuntimeError(
