@@ -90,7 +90,7 @@ def process_studio(
     source = video_file or url
     if not source:
         raise _ui_error("Upload a video/recording or paste a video URL")
-    clone_voice = voice_mode == "Clone original speaker with Sarvam"
+    clone_voice = "Clone original speaker with Sarvam" in voice_mode
     if clone_voice and not voice_clone_consent:
         raise _ui_error("Confirm that you have the right to clone this speaker before continuing.")
     try:
@@ -111,7 +111,7 @@ def process_studio(
     if result.get("voice_cloned"):
         clone_info = f"Speaker identity: preserved by Sarvam ({result.get('clone_method', 'source-speaker clone')}). "
     else:
-        clone_info = f"Speaker identity: preset voice only ({result.get('voice_used', 'N/A')}). "
+        clone_info = f"Speaker identity: {result.get('voice_used', 'Neural voice')}. "
 
     return result["output_video_path"], result["dubbed_audio_path"], result["subtitle_path"], (
         f"Completed {result['target_language']} dubbing. "
@@ -125,7 +125,7 @@ def process_audio(audio_file: Any, language: str, gender: str, voice_mode: str, 
     """Audio-to-Audio dubbing callback for uploaded audio files or microphone recordings."""
 
     normalized_path = _normalize_audio(audio_file)
-    clone_voice = voice_mode == "Clone original speaker with Sarvam"
+    clone_voice = "Clone original speaker with Sarvam" in voice_mode
     if clone_voice and not voice_clone_consent:
         raise _ui_error("Confirm that you have the right to clone this speaker before continuing.")
     try:
@@ -137,7 +137,7 @@ def process_audio(audio_file: Any, language: str, gender: str, voice_mode: str, 
     if clone_voice:
         status_msg = f"✅ Dubbed into {lang} with Sarvam source-speaker preservation."
     else:
-        status_msg = f"✅ Dubbed into {lang} using {result.get('voice_used', 'Sarvam preset voice')}."
+        status_msg = f"✅ Dubbed into {lang} using {result.get('voice_used', 'Neural preset voice')}."
     return result["output_audio_path"], result.get("transcribed_source", ""), result["transcreated_text"], status_msg
 
 
@@ -147,6 +147,11 @@ def build_app():
 
     languages = sorted(VOICE_MAP)
     matrix_languages = [name for name in languages if name not in {"hinglish", "tanglish", "tenglish"}]
+    voice_modes = [
+        "⚡ Fast Neural Dub (Instant ~3s - Astra 6)",
+        "Clone original speaker with Sarvam",
+        "Sarvam preset voice",
+    ]
     with gr.Blocks(title="DubX Regional Dubbing Studio") as demo:
         gr.Markdown("# DubX\nRegional AI dubbing with a simple 3-input → 3-output workflow.")
         with gr.Tab("🎬 Studio mode"):
@@ -156,8 +161,8 @@ def build_app():
                     video_url = gr.Textbox(label="Or paste a YouTube/video URL", placeholder="https://www.youtube.com/watch?v=...")
                     language = gr.Dropdown(languages, value="hindi", label="Target language")
                     source_language = gr.Dropdown(matrix_languages, value="english", label="Source language")
-                    voice_mode = gr.Radio(["Sarvam preset voice", "Clone original speaker with Sarvam"], value="Clone original speaker with Sarvam", label="Voice mode", info="Best source-speaker match. You must confirm you have permission below.")
-                    voice_clone_consent = gr.Checkbox(label="I have permission to clone and use this speaker's voice", value=False)
+                    voice_mode = gr.Radio(voice_modes, value="⚡ Fast Neural Dub (Instant ~3s - Astra 6)", label="Voice mode", info="⚡ Fast Neural Dub runs in ~3 seconds. Sarvam cloud dubbing takes 3-5 mins.")
+                    voice_clone_consent = gr.Checkbox(label="I have permission to clone and use this speaker's voice (Sarvam only)", value=False)
                     gender = gr.Radio(["auto", "male", "female"], value="auto", label="Voice / Gender", info="auto detects speaker gender")
                     dialect = gr.Slider(1, 3, value=2, step=1, label="Dialect / register", info="1 formal · 2 conversational · 3 street slang")
                     burn = gr.Checkbox(label="Burn translated captions aligned to the dubbed audio", value=True)
@@ -178,8 +183,8 @@ def build_app():
                         audio_source_language = gr.Dropdown(matrix_languages, value="english", label="Source language")
                         audio_language = gr.Dropdown(languages, value="hindi", label="Target language")
                         audio_gender = gr.Radio(["auto", "male", "female"], value="auto", label="Voice / Gender", info="auto detects speaker gender")
-                    audio_voice_mode = gr.Radio(["Sarvam preset voice", "Clone original speaker with Sarvam"], value="Clone original speaker with Sarvam", label="Voice mode", info="Best source-speaker match. You must confirm you have permission below.")
-                    audio_voice_clone_consent = gr.Checkbox(label="I have permission to clone and use this speaker's voice", value=False)
+                    audio_voice_mode = gr.Radio(voice_modes, value="⚡ Fast Neural Dub (Instant ~3s - Astra 6)", label="Voice mode", info="⚡ Fast Neural Dub runs in ~3 seconds. Sarvam cloud dubbing takes 3-5 mins.")
+                    audio_voice_clone_consent = gr.Checkbox(label="I have permission to clone and use this speaker's voice (Sarvam only)", value=False)
                     audio_run = gr.Button("Dub Audio", variant="primary")
                 with gr.Column():
                     output_dubbed_audio = gr.Audio(label="Dubbed Regional Audio", type="filepath")

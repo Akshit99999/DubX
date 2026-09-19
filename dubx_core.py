@@ -111,18 +111,27 @@ def _translated_segments(segments: list[SubtitleSegment], target_language: str, 
     # the full dialogue to each transcreation call so pronouns, jokes, and tone
     # survive those boundaries while the segment's own duration still controls
     # the spoken-length budget and subtitle timing.
+    import concurrent.futures
+
     context = " ".join(segment.text.strip() for segment in segments if segment.text.strip())
-    translated: list[SubtitleSegment] = []
-    for segment in segments:
+
+    def _translate_one(seg: SubtitleSegment) -> SubtitleSegment:
         result = transcreate(
-            segment.text,
+            seg.text,
             target_language,
             api_key=api_key,
-            duration_seconds=max(0.1, segment.end - segment.start),
+            duration_seconds=max(0.1, seg.end - seg.start),
             dialect_level=dialect_level,
             context=context,
         )
-        translated.append(SubtitleSegment(segment.start, segment.end, segment.text, result["transcreated_text"]))
+        return SubtitleSegment(seg.start, seg.end, seg.text, result["transcreated_text"])
+
+    if len(segments) <= 1:
+        translated = [_translate_one(seg) for seg in segments]
+    else:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, len(segments))) as executor:
+            translated = list(executor.map(_translate_one, segments))
+
     return translated, " ".join(item.translated_text for item in translated).strip()
 
 

@@ -168,6 +168,7 @@ def dub_media(
 
     terminal = {"completed", "partial_failure", "failed", "deleted"}
     deadline = time.monotonic() + timeout_seconds
+    poll_interval = min(5, max(2, poll_seconds))
     while True:
         job = client.dubbing.get_live_status(job_id=job_id).data
         event = {
@@ -182,13 +183,15 @@ def dub_media(
             break
         if time.monotonic() > deadline:
             raise TimeoutError(f"Sarvam dubbing job {job_id} did not finish within {timeout_seconds}s")
-        time.sleep(poll_seconds)
+        time.sleep(poll_interval)
+        poll_interval = min(8, poll_interval + 1)
 
     if getattr(job, "status", None) == "failed":
         raise SarvamDubbingError(getattr(job, "error_message", None) or f"Sarvam dubbing job {job_id} failed")
 
     wanted = {(target_code, export_type) for export_type in export_options}
     deadline = time.monotonic() + timeout_seconds
+    poll_interval = 3
     while True:
         exports = client.dubbing.get_export_status(job_id=job_id, limit=100).data.exports or []
         settled = {
@@ -200,7 +203,8 @@ def dub_media(
             break
         if time.monotonic() > deadline:
             raise TimeoutError(f"Sarvam exports for job {job_id} did not settle within {timeout_seconds}s")
-        time.sleep(poll_seconds)
+        time.sleep(poll_interval)
+        poll_interval = min(6, poll_interval + 1)
 
     suffixes = {"video": ".mp4", "audio": ".wav", "mp3": ".mp3", "srt": ".srt"}
     downloaded: dict[str, str] = {}
