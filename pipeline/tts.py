@@ -7,17 +7,15 @@ uses a clearly labelled Sarvam preset voice instead of claiming a clone.
 
 from __future__ import annotations
 
-import asyncio
 import base64
 import binascii
-import concurrent.futures
 import os
 import re
 import tempfile
 from pathlib import Path
 from typing import Any
 
-from config import OUTPUT_DIR, sarvam_language_code, voice_for
+from config import OUTPUT_DIR, sarvam_language_code
 
 
 def _pace_from_rate(rate: str) -> float:
@@ -83,27 +81,6 @@ def _decode_wav_payload(payload: Any) -> bytes:
     return raw
 
 
-async def _edge_tts_synth(text: str, voice: str, output_path: str, rate: str = "+0%", pitch: str = "+0Hz") -> str:
-    try:
-        import edge_tts
-    except ImportError as exc:
-        raise RuntimeError("Edge-TTS is not installed. Install it with: pip install edge-tts") from exc
-    await edge_tts.Communicate(text=text, voice=voice, rate=rate, pitch=pitch).save(output_path)
-    return output_path
-
-
-def _run_async(coro):
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        loop = None
-
-    if loop and loop.is_running():
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-            return pool.submit(asyncio.run, coro).result()
-    return asyncio.run(coro)
-
-
 def synthesize(
     text: str,
     language: str,
@@ -114,7 +91,7 @@ def synthesize(
     pitch: str = "+0Hz",
     clone_voice: bool = False,
 ) -> dict[str, Any]:
-    """Synthesize speech using Sarvam Bulbul v3 or Edge-TTS neural engine."""
+    """Synthesize speech using Sarvam Bulbul v3 neural engine."""
 
     if clone_voice or reference_audio:
         raise RuntimeError(
@@ -135,64 +112,49 @@ def synthesize(
     destination.parent.mkdir(parents=True, exist_ok=True)
 
     sarvam_key = os.getenv("SARVAM_API_KEY", "").strip()
+    if not sarvam_key:
+        raise RuntimeError(
+            "SARVAM_API_KEY is required for speech synthesis. Edge-TTS has been removed."
+        )
 
-    # Try Sarvam if API key is present
-    if sarvam_key:
-        try:
-            from sarvamai import SarvamAI
+    try:
+        from sarvamai import SarvamAI
 
-            speaker = os.getenv("DUBX_SARVAM_SPEAKER", "").strip() or None
-            if not speaker:
-                # Map gender to natural Sarvam Bulbul preset voices
-                speaker = "anushka" if gender == "female" else "aditya"
+        speaker = os.getenv("DUBX_SARVAM_SPEAKER", "").strip() or None
+        if not speaker:
+            # Map gender to natural Sarvam Bulbul preset voices
+            speaker = "anushka" if gender == "female" else "aditya"
 
-            request: dict[str, Any] = {
-                "text": text[:2500],
-                "language_code": sarvam_language_code(language),
-                "speaker": speaker,
-                "model": "bulbul:v3",
-                "pace": _pace_from_rate(rate),
-                "speech_sample_rate": 24000,
-                "output_audio_codec": "wav",
-                "temperature": 0.45,
-            }
+        request: dict[str, Any] = {
+            "text": text[:2500],
+            "language_code": sarvam_language_code(language),
+            "speaker": speaker,
+            "model": "bulbul:v3",
+            "pace": _pace_from_rate(rate),
+            "speech_sample_rate": 24000,
+            "output_audio_codec": "wav",
+            "temperature": 0.45,
+        }
 
-            response = SarvamAI(api_subscription_key=sarvam_key).text_to_speech.convert(**request)
-            audios = _response_value(response, "audios")
-            if not audios:
-                raise RuntimeError("Sarvam Bulbul returned no audio")
-            audio_bytes = _decode_wav_payload(audios[0])
-            _write_atomic(destination, audio_bytes)
-            return {
-                "output_path": str(destination),
-                "voice_used": f"sarvam:{speaker}",
-                "cloned_voice": False,
-                "clone_method": "none",
-                "backend": "sarvam-bulbul:v3",
-                "gender_used": gender,
-                "detected_gender": None,
-                "f0_hz": None,
-                "speaker_f0_hz": None,
-                "pitch_offset": None,
-            }
-        except Exception as exc:
-            # If caller is in a mock test with fake client, don't silently swallow mock errors
-            if "SimpleNamespace" in str(type(exc)) or "_FakeSarvamClient" in str(exc):
-                raise
-            print(f"[DubX] Sarvam Bulbul synthesis unavailable ({exc}); falling back to Edge-TTS")
-
-    # Fast Neural Edge-TTS fallback / default
-    voice = voice_for(language, gender if gender in {"male", "female"} else "male")
-    _run_async(_edge_tts_synth(text, voice, str(destination), rate=rate, pitch=pitch))
-    return {
-        "output_path": str(destination),
-        "voice_used": voice,
-        "cloned_voice": False,
-        "clone_method": "edge-neural",
-        "backend": "edge-tts",
-        "gender_used": gender,
-        "detected_gender": None,
-        "f0_hz": None,
-        "speaker_f0_hz": None,
-        "pitch_offset": pitch,
-    }
+        response = SarvamAI(api_subscription_key=sarvam_key).text_to_speech.convert(**request)
+        audios = _response_value(response, "audios")
+        if not audios:
+            raise RuntimeError("Sarvam Bulbul returned no audio")
+        audio_bytes = _decode_wav_payload(audios[0])
+        _write_atomic(destination, audio_bytes)
+        return {
+            "output_path": str(destination),
+            "voice_used": f"sarvam:{speaker}",
+            "cloned_voice": False,
+            "clone_method": "none",
+            "backend": "sarvam-bulbul:v3",
+            "gender_used": gender,
+            "detected_gender": None,
+            "f0_hz": None,
+            "speaker_f0_hz": None,
+            "pitch_offset": None,
+        }
+    except Exception as exc:
+        if isinstance(exc, (RuntimeError, ValueError)):
+            raise
+        raise RuntimeError(f"Sarvam Bulbul synthesis failed: {exc}") from exc

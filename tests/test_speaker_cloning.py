@@ -41,6 +41,11 @@ class TestSarvamSpeakerWorkflow(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "Sarvam Dubbing"):
             synthesize("नमस्ते", "hindi", output_path="unused.wav", clone_voice=True)
 
+    def test_text_tts_requires_sarvam_key(self):
+        with patch.dict(os.environ, {"SARVAM_API_KEY": ""}):
+            with self.assertRaisesRegex(RuntimeError, "SARVAM_API_KEY is required"):
+                synthesize("नमस्ते", "hindi", output_path="unused.wav")
+
     def test_audio_clone_requires_explicit_consent_and_uses_sarvam_job(self):
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / "speaker.wav"

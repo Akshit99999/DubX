@@ -148,9 +148,8 @@ def build_app():
     languages = sorted(VOICE_MAP)
     matrix_languages = [name for name in languages if name not in {"hinglish", "tanglish", "tenglish"}]
     voice_modes = [
-        "⚡ Fast Neural Dub (Instant ~3s - Astra 6)",
-        "Clone original speaker with Sarvam",
         "Sarvam preset voice",
+        "Clone original speaker with Sarvam",
     ]
     with gr.Blocks(title="DubX Regional Dubbing Studio") as demo:
         gr.Markdown("# DubX\nRegional AI dubbing with a simple 3-input → 3-output workflow.")
@@ -161,7 +160,7 @@ def build_app():
                     video_url = gr.Textbox(label="Or paste a YouTube/video URL", placeholder="https://www.youtube.com/watch?v=...")
                     language = gr.Dropdown(languages, value="hindi", label="Target language")
                     source_language = gr.Dropdown(matrix_languages, value="english", label="Source language")
-                    voice_mode = gr.Radio(voice_modes, value="⚡ Fast Neural Dub (Instant ~3s - Astra 6)", label="Voice mode", info="⚡ Fast Neural Dub runs in ~3 seconds. Sarvam cloud dubbing takes 3-5 mins.")
+                    voice_mode = gr.Radio(voice_modes, value="Sarvam preset voice", label="Voice mode", info="Sarvam preset voice uses Bulbul v3 (~3s). Clone original speaker runs Sarvam Dubbing cloud pipeline (3-5 mins).")
                     voice_clone_consent = gr.Checkbox(label="I have permission to clone and use this speaker's voice (Sarvam only)", value=False)
                     gender = gr.Radio(["auto", "male", "female"], value="auto", label="Voice / Gender", info="auto detects speaker gender")
                     dialect = gr.Slider(1, 3, value=2, step=1, label="Dialect / register", info="1 formal · 2 conversational · 3 street slang")
@@ -183,7 +182,7 @@ def build_app():
                         audio_source_language = gr.Dropdown(matrix_languages, value="english", label="Source language")
                         audio_language = gr.Dropdown(languages, value="hindi", label="Target language")
                         audio_gender = gr.Radio(["auto", "male", "female"], value="auto", label="Voice / Gender", info="auto detects speaker gender")
-                    audio_voice_mode = gr.Radio(voice_modes, value="⚡ Fast Neural Dub (Instant ~3s - Astra 6)", label="Voice mode", info="⚡ Fast Neural Dub runs in ~3 seconds. Sarvam cloud dubbing takes 3-5 mins.")
+                    audio_voice_mode = gr.Radio(voice_modes, value="Sarvam preset voice", label="Voice mode", info="Sarvam preset voice uses Bulbul v3 (~3s). Clone original speaker runs Sarvam Dubbing cloud pipeline (3-5 mins).")
                     audio_voice_clone_consent = gr.Checkbox(label="I have permission to clone and use this speaker's voice (Sarvam only)", value=False)
                     audio_run = gr.Button("Dub Audio", variant="primary")
                 with gr.Column():
