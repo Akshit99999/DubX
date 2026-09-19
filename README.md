@@ -54,7 +54,7 @@ OUTPUT CHOICES:
 3. **Colloquial Transcreation Engine:** Prompt-engineered LLM translation enforcing **syllable/duration budgeting** to prevent speech-video drift and translate natural slang (Hinglish/Tanglish) rather than literal textbook phrasing.
 4. **Bilingual Subtitle Generation:** Automatic synced `.srt`/`.vtt` with native Indic font shaping (HarfBuzz + Noto Sans).
 5. **Text to Regional Audio Dubbing:** Input any English text, phrase, or idiom and instantly generate culturally transcreated regional audio (MP3) without losing meaning or metaphors.
-6. **Dynamic Dual-Language Code-Mixing Matrix:** Blend ANY two languages (Hindi+Punjabi, English+Punjabi, Hinglish, Tanglish, Tenglish) with dual-script output (Romanized Latin for WhatsApp/social captions or native Indic script).
+6. **Dynamic Dual-Language Code-Mixing Matrix:** Blend any two configured languages (Hindi + Punjabi, Hinglish, Tanglish, Tenglish, and more) with intensity and native/romanized/dual-script output.
 
 ---
 
@@ -136,3 +136,37 @@ flowchart LR
 - **Pricing:** Creator SaaS ($19–$59/mo) + Pay-As-You-Go API ($0.30/min).
 - **Unit Economics:** Pipeline compute cost **~$0.04/min (₹3.30/min)** vs. selling price **~$0.35/min (₹29/min)** $\rightarrow$ **88.5% Gross Margin**.
 - **Market Size:** Global TAM $6.5B | India SAM $450M–$600M | DubX SOM $15M ARR.
+
+---
+
+## 🚀 Implementation Quickstart
+
+The implementation described in [`implementation.md`](./implementation.md) is now wired into:
+
+- `dubx_core.py` — the five-mode CLI and Python API.
+- `app.py` — Studio, Live microphone-clip, and text-demo Gradio tabs.
+- `pipeline/` — optional ASR, TTS, transcreation, FFmpeg, stem separation, and remuxing components.
+- `utils/` — syllable budgeting, subtitle formatting, and URL ingestion.
+
+Install the Python integrations with `pip install -r requirements.txt`, install FFmpeg separately, and copy `.env.example` to `.env` or export the keys in your shell. Keys are intentionally placeholders and are never hardcoded in the source.
+
+The offline text demo needs no API key:
+
+```bash
+python dubx_core.py --mode t2t --input "Don't put all your eggs in one basket" --lang hindi
+
+# Dynamic dual-language code-mixing (Hindi + Punjabi, native + Roman output)
+python dubx_core.py --mode mix --input "Don't put all your eggs in one basket" --primary hindi --secondary punjabi --intensity 2 --script dual
+```
+
+Run the web studio with:
+
+```bash
+python app.py
+```
+
+Run the offline verification suite with:
+
+```bash
+python -m unittest discover -s tests -v
+```

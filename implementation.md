@@ -158,7 +158,7 @@ ffmpeg -y \
 
 ### 4.3 Dynamic Dual-Language Code-Mixing Matrix: Any Language A + Any Language B
 
-In real-world India, linguistic identity is fluid and code-mixed across multiple vernaculars. A Delhi creator blends **Hindi + Punjabi**, a Punjab YouTuber blends **English + Punjabi**, a Bengaluru coder blends **Kannada + English**, and a Mumbai creator blends **Hindi + Marathi + English**. 
+In real-world India, linguistic identity is fluid and code-mixed across multiple vernaculars. A Delhi creator blends **Hindi + Punjabi**, a Punjab YouTuber blends **English + Punjabi**, a Bengaluru coder blends **Kannada + English**, and a Mumbai creator blends **Hindi + Marathi + English**.
 
 DubX implements a **Dynamic Dual-Language Code-Mixing Matrix** allowing users to select **ANY two languages** to generate authentic, culturally fluid translations:
 
@@ -191,21 +191,21 @@ DubX implements a **Dynamic Dual-Language Code-Mixing Matrix** allowing users to
 ```mermaid
 flowchart TD
     SRC["Source Text / Video Dialogue"] --> SELECTOR["Bilingual Selector Component in UI"]
-    
+
     subgraph UI_Controls["User Controls"]
         L_A["Primary Language A\n(Hindi, Punjabi, Tamil, Telugu, English...)"]
         L_B["Secondary Language B\n(English, Punjabi, Hindi, Marathi...)"]
         RATIO["Code-Mixing Intensity Slider\n(Level 1: 15% Loan Words ➔ Level 3: 50% Full Vernacular Blend)"]
-        SCRIPT["Script Output Preference\n(Script A / Script B / Romanized Latin Alphabet)"]
+    SCRIPT["Script Output Preference\n(Script A / Script B / Romanized Latin Alphabet)"]
     end
-    
+
     L_A --> SELECTOR
     L_B --> SELECTOR
     RATIO --> SELECTOR
     SCRIPT --> SELECTOR
-    
+
     SELECTOR --> ENGINE["Gemini 1.5 Flash Code-Mixing Synthesizer\n- Prompt: Blend {Lang_A} grammar with {Lang_B} colloquial idioms\n- Output in {Script_Preference}"]
-    
+
     ENGINE --> TTS["Bilingual Voice Synthesis Router\n(Selects neural voice with bilingual code-mixed capability)"]
     TTS --> OUT["Code-Mixed Dubbed Audio + Synced Subtitles"]
 ```
