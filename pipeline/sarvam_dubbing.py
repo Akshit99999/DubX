@@ -19,10 +19,51 @@ def available() -> bool:
     return bool(os.getenv("SARVAM_API_KEY", "").strip())
 
 
-def _download(url: str, destination: Path) -> str:
+def _download(url: str, destination: Path, max_retries: int = 5) -> str:
+    """Download a file with chunked streaming, retries, and partial resumption."""
     destination.parent.mkdir(parents=True, exist_ok=True)
-    with urllib.request.urlopen(url, timeout=120) as response, destination.open("wb") as handle:
-        handle.write(response.read())
+    temp_path = destination.with_suffix(destination.suffix + ".part")
+
+    import requests
+
+    for attempt in range(max_retries):
+        try:
+            downloaded = temp_path.stat().st_size if temp_path.exists() else 0
+            headers = {}
+            if downloaded > 0:
+                headers["Range"] = f"bytes={downloaded}-"
+
+            with requests.get(url, headers=headers, stream=True, timeout=(20, 120)) as resp:
+                if resp.status_code == 416:
+                    temp_path.unlink(missing_ok=True)
+                    downloaded = 0
+                    resp = requests.get(url, stream=True, timeout=(20, 120))
+                elif resp.status_code == 200 and downloaded > 0:
+                    temp_path.unlink(missing_ok=True)
+                    downloaded = 0
+
+                resp.raise_for_status()
+                mode = "ab" if downloaded > 0 and resp.status_code == 206 else "wb"
+                with open(temp_path, mode) as handle:
+                    for chunk in resp.iter_content(chunk_size=256 * 1024):
+                        if chunk:
+                            handle.write(chunk)
+
+            if temp_path.exists():
+                temp_path.replace(destination)
+            return str(destination)
+        except Exception as exc:
+            if attempt == max_retries - 1:
+                # If partial file is non-empty, attempt to use it as fallback
+                if temp_path.exists() and temp_path.stat().st_size > 0:
+                    try:
+                        temp_path.replace(destination)
+                        return str(destination)
+                    except Exception:
+                        pass
+                raise RuntimeError(f"Download failed from {url} after {max_retries} attempts: {exc}") from exc
+            time.sleep(1.0 * (2 ** attempt))
+
     return str(destination)
 
 
