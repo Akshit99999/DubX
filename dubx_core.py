@@ -88,13 +88,27 @@ def _fast_mode() -> bool:
     return os.getenv("DUBX_FAST_MODE", "1").strip().lower() not in {"0", "false", "no", "off"}
 
 
-def text_to_text_dub(text: str, target_language: str = "hindi", api_key: str | None = None, duration_seconds: float | None = None, dialect_level: int = 2) -> dict[str, Any]:
+def text_to_text_dub(
+    text: str,
+    target_language: str = "hindi",
+    api_key: str | None = None,
+    duration_seconds: float | None = None,
+    dialect_level: int = 2,
+    context: str | None = None,
+) -> dict[str, Any]:
     """Mode 1: translate English text into colloquial regional speech."""
 
     if not text or not text.strip():
         raise ValueError("Text input cannot be empty")
     config = language_config(target_language)
-    result = transcreate(text, target_language, api_key=api_key, duration_seconds=duration_seconds, dialect_level=dialect_level)
+    result = transcreate(
+        text,
+        target_language,
+        api_key=api_key,
+        duration_seconds=duration_seconds,
+        dialect_level=dialect_level,
+        context=context,
+    )
     budget_obj = result.get("budget")
     budget_dict = asdict(budget_obj) if is_dataclass(budget_obj) else budget_obj
     return {
@@ -137,11 +151,20 @@ def dual_language_code_mix(
     return res
 
 
-def text_to_audio_dub(text: str, target_language: str = "hindi", gender: str = "male", output_path: str | None = None, api_key: str | None = None, rate: str = "+0%", dialect_level: int = 2) -> dict[str, Any]:
+def text_to_audio_dub(
+    text: str,
+    target_language: str = "hindi",
+    gender: str = "male",
+    output_path: str | None = None,
+    api_key: str | None = None,
+    rate: str = "+0%",
+    dialect_level: int = 2,
+    context: str | None = None,
+) -> dict[str, Any]:
     """Mode 2: transcreate text and synthesize a regional MP3."""
 
     config = language_config(target_language)
-    result = text_to_text_dub(text, target_language, api_key=api_key, dialect_level=dialect_level)
+    result = text_to_text_dub(text, target_language, api_key=api_key, dialect_level=dialect_level, context=context)
     if not output_path:
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         output_path = str(OUTPUT_DIR / f"t2a_{_safe_stem(text[:30])}_{target_language.lower()}.wav")

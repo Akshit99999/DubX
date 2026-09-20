@@ -91,6 +91,18 @@ class DubXOfflineTests(unittest.TestCase):
         self.assertEqual(request["segments"][1]["context_after"], "It was fragile.")
         self.assertEqual([item.translated_text for item in translated], ["a", "b", "c"])
 
+    def test_text_context_is_forwarded_to_transcreation(self):
+        with patch("dubx_core.transcreate") as transcreate:
+            transcreate.return_value = {
+                "transcreated_text": "संदर्भित पंक्ति",
+                "detected_intent": "keep the previous scene's tone",
+                "explanation": "context retained",
+                "budget": None,
+                "engine": "mock",
+            }
+            text_to_text_dub("That was close.", "hindi", context="Maya has just escaped a storm.")
+        self.assertEqual(transcreate.call_args.kwargs["context"], "Maya has just escaped a storm.")
+
 
 if __name__ == "__main__":
     unittest.main()

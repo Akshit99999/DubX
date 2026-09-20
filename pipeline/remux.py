@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
@@ -17,6 +18,22 @@ def _run(command: list[str]) -> None:
     except subprocess.CalledProcessError as exc:
         detail = (exc.stderr or exc.stdout or "FFmpeg failed").strip()
         raise RuntimeError(detail[-2000:]) from exc
+
+
+def _caption_encode_options() -> list[str]:
+    """Return safe H.264 quality settings for the caption-rendered export."""
+
+    try:
+        crf = min(28, max(16, int(os.getenv("DUBX_CAPTION_CRF", "18"))))
+    except ValueError:
+        crf = 18
+    preset = os.getenv("DUBX_CAPTION_PRESET", "medium").strip().lower()
+    if preset not in {"ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower"}:
+        preset = "medium"
+    return [
+        "-c:v", "libx264", "-preset", preset, "-crf", str(crf),
+        "-profile:v", "high", "-pix_fmt", "yuv420p", "-movflags", "+faststart",
+    ]
 
 
 def remux_video(source_video: str, dubbed_audio: str, output_video: str, original_audio: str | None = None, language_code: str = "hi") -> str:
@@ -76,7 +93,11 @@ def burn_captions(source_video: str, dubbed_audio: str, subtitle_path: str, outp
         "OutlineColour=&H00000000,BackColour=&H80000000,BorderStyle=1,"
         "Outline=2,Shadow=1,MarginV=34,MarginL=90,MarginR=90,WrapStyle=0'"
     )
-    _run(["ffmpeg", "-y", "-i", source_video, "-i", dubbed_audio, "-vf", vf, "-c:v", "libx264", "-preset", "ultrafast", "-crf", "22", "-c:a", "aac", "-b:a", "192k", "-map", "0:v:0", "-map", "1:a:0", output_video])
+    _run([
+        "ffmpeg", "-y", "-i", source_video, "-i", dubbed_audio, "-vf", vf,
+        *_caption_encode_options(), "-c:a", "aac", "-b:a", "192k",
+        "-map", "0:v:0", "-map", "1:a:0", output_video,
+    ])
     return output_video
 
 

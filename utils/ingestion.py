@@ -63,9 +63,9 @@ def resolve_input(
         request_id = str(time.time_ns())
         template = str(destination / f"source_{request_id}_%(id)s.%(ext)s")
         try:
-            max_height = max(144, int(os.getenv("DUBX_YOUTUBE_MAX_HEIGHT", "720")))
+            max_height = max(144, int(os.getenv("DUBX_YOUTUBE_MAX_HEIGHT", "1080")))
         except ValueError:
-            max_height = 720
+            max_height = 1080
         format_selector = f"bv*[height<={max_height}]+ba/b[height<={max_height}]/b"
         command = yt_dlp_command + [
             "--no-playlist",

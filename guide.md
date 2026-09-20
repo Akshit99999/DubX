@@ -10,7 +10,7 @@ Start the Gradio UI with:
 python app.py
 ```
 
-It runs locally at `http://127.0.0.1:7860` by default. Configuration comes from `.env`; use `.env.example` as a template. Media dubbing needs `SARVAM_API_KEY`. URL downloads need `yt-dlp`; local ASR can use `faster-whisper` or `GROQ_API_KEY`.
+It runs locally at `http://127.0.0.1:7860` by default. The Home tab introduces the workflow; Creator Studio produces a dub, Creator viewer previews saved MP4 masters, and the optional local Sign in tab verifies `DUBX_CREATOR_EMAIL` / `DUBX_CREATOR_PASSWORD` when configured. Configuration comes from `.env`; use `.env.example` as a template. Media dubbing needs `SARVAM_API_KEY`. URL downloads need `yt-dlp`; local ASR can use `faster-whisper` or `GROQ_API_KEY`.
 
 ## Main flow
 
@@ -25,7 +25,7 @@ Studio UI
   -> video, WAV, SRT/VTT returned to Gradio
 ```
 
-Audio mode follows the same Sarvam path without video remuxing. Text mode is separate text-to-text and text-to-audio processing.
+Audio mode follows the same Sarvam path without video remuxing. Text Lab is separate text-to-text and text-to-audio processing; its optional production-context note is forwarded to transcreation so names, scene details, and intended tone remain available to the translator.
 
 ## Source files
 
@@ -63,6 +63,8 @@ SRT timestamps control when captions appear and disappear. The burn-in style in 
 - no opaque caption panel;
 - 90px left/right safe margins and 34px bottom margin;
 - normalized one-cue subtitles, wrapping only if a long sentence cannot fit in the safe frame.
+
+Captioned MP4s encode with H.264 High Profile at CRF 18 and the `medium` preset by default, with `+faststart` for web playback. Override those values with `DUBX_CAPTION_CRF` (16–28) and `DUBX_CAPTION_PRESET` when an export needs a different quality/speed balance. YouTube downloads default to a maximum height of 1080p.
 
 Provider SRT exports are normalized by `normalize_srt_file` before they are returned or burned into the final video.
 
