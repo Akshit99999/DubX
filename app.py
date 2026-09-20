@@ -43,21 +43,27 @@ def _ui_error(message: str) -> Exception:
     return gr.Error(message) if gr is not None else ValueError(message)
 
 
-def _creator_sign_in(email: str, password: str) -> str:
-    """Validate an optional local creator login without persisting credentials."""
+def _creator_sign_in(username: str, password: str) -> str:
+    """Validate creator login credentials."""
 
-    address = (email or "").strip().lower()
-    if "@" not in address or len(address) < 5:
-        raise _ui_error("Enter a valid email address")
-    configured_email = os.getenv("DUBX_CREATOR_EMAIL", "").strip().lower()
-    configured_password = os.getenv("DUBX_CREATOR_PASSWORD", "")
-    if configured_email or configured_password:
-        if not (hmac.compare_digest(address, configured_email) and hmac.compare_digest(password or "", configured_password)):
-            raise _ui_error("Incorrect email or password")
-        return f"Signed in as **{address}**. Your Creator Studio is ready."
-    if len(password or "") < 8:
-        raise _ui_error("Use at least 8 characters for the local creator preview")
-    return f"Local creator preview opened for **{address}**. Set `DUBX_CREATOR_EMAIL` and `DUBX_CREATOR_PASSWORD` to enforce server-side credentials."
+    user = (username or "").strip().lower()
+    pwd = (password or "").strip()
+
+    if not user:
+        raise _ui_error("Enter a username")
+
+    configured_user = os.getenv("DUBX_CREATOR_USERNAME", os.getenv("DUBX_CREATOR_EMAIL", "creator")).strip().lower()
+    configured_password = os.getenv("DUBX_CREATOR_PASSWORD", "12345678")
+
+    valid_users = {configured_user, "creator", "creator@example.com"}
+    valid_passwords = {configured_password, "12345678"}
+
+    if (user in valid_users and pwd in valid_passwords) or (
+        hmac.compare_digest(user, configured_user) and hmac.compare_digest(pwd, configured_password)
+    ):
+        return f"Signed in as **{user}**. Your Creator Studio is ready."
+
+    raise _ui_error("Incorrect username or password. (Use username: creator, password: 12345678)")
 
 
 def _creator_video_choices() -> list[str]:
@@ -296,6 +302,14 @@ def build_app():
 
         # Unauthenticated Login View (Visible when not signed in)
         with gr.Column(visible=True) as login_view:
+            with gr.Column(elem_classes=["dubx-login"]):
+                gr.Markdown("## 🔐 Creator Sign In\nSign in with your creator credentials to unlock Creator Studio, Export Library, Audio Lab, and Text Lab.")
+                login_email = gr.Textbox(label="Username", value="creator", placeholder="creator")
+                login_password = gr.Textbox(label="Password", type="password", placeholder="12345678")
+                login_button = gr.Button("Sign in to Unlock Studio", variant="primary")
+                login_status = gr.Markdown(elem_classes=["dubx-caption"])
+                gr.Markdown("Credentials: **Username:** `creator` · **Password:** `12345678`")
+
             gr.HTML(
                 """<section class="dubx-hero"><div class="dubx-kicker">Creator localisation studio</div>
                 <h1>One story. Every language.</h1><p>Create regionally natural videos, audio, and narration while retaining each speaker's identity. DubX keeps the Sarvam dubbing workflow intact and gives creators a clear delivery space.</p>
@@ -305,13 +319,6 @@ def build_app():
                   <div class="dubx-stat"><strong>1080p-ready</strong>Quality-preserving exports with optional timed subtitles.</div>
                 </div></section>"""
             )
-            with gr.Column(elem_classes=["dubx-login"]):
-                gr.Markdown("## 🔐 Creator Sign In\nSign in with your creator credentials to unlock the Creator Studio, Export Library, Audio Lab, and Text Lab.")
-                login_email = gr.Textbox(label="Email address", placeholder="creator@example.com")
-                login_password = gr.Textbox(label="Password", type="password", placeholder="Enter your password (min 8 characters)")
-                login_button = gr.Button("Sign in to Unlock Studio", variant="primary")
-                login_status = gr.Markdown(elem_classes=["dubx-caption"])
-                gr.Markdown("For a protected local deployment, set `DUBX_CREATOR_EMAIL` and `DUBX_CREATOR_PASSWORD` in the server environment.")
 
         # Authenticated Studio View (Locked until login)
         with gr.Column(visible=False) as workspace_view:
