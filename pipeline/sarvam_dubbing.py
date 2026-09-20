@@ -153,7 +153,10 @@ def dub_media(
     # export; we extract that exact embedded track locally after downloading.
     export_options = ["audio", "srt"]
     if media_kind == "video":
-        export_options = ["video", "srt"] if fast_mode else ["video", "audio", "srt"]
+        # A secondary language is mixed as a separate timed track, so it must
+        # receive its own audio export even when the primary video uses the
+        # fast embedded-audio path.
+        export_options = ["video", "audio", "srt"] if secondary_code else (["video", "srt"] if fast_mode else ["video", "audio", "srt"])
     else:
         fast_mode = False
 

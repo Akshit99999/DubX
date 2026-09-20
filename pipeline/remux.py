@@ -110,9 +110,13 @@ def mix_timed_audio_tracks(primary_audio: str, secondary_audio: str, secondary_c
         return primary_audio
     Path(output_audio).parent.mkdir(parents=True, exist_ok=True)
     windows = "+".join(f"between(t,{start:.3f},{end:.3f})" for start, end in cues)
+    # Keep the primary track everywhere except the selected windows, and keep
+    # the secondary track only inside those windows. The previous chained
+    # `volume=0,volume=1:enable=...` left the secondary track at zero globally.
+    outside = f"not({windows})"
     filter_graph = (
         f"[0:a]volume=0:enable='{windows}'[primary];"
-        f"[1:a]volume=0,volume=1:enable='{windows}'[secondary];"
+        f"[1:a]volume=0:enable='{outside}'[secondary];"
         "[primary][secondary]amix=inputs=2:duration=first:normalize=0[a]"
     )
     _run([

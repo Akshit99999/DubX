@@ -247,7 +247,8 @@ def process_studio(
         raise _ui_error(str(exc)) from exc
 
     clone_info = f"Speaker identity: preserved independently by Sarvam ({result.get('clone_method', 'source-speaker clone')}). "
-    mix_info = " Code-mixed conversational register enabled." if code_mix_enabled else ""
+    mix_share = {1: "15%", 2: "30%", 3: "50%"}.get(int(code_mix_intensity), "0%")
+    mix_info = f" Punjabi/secondary-language frequency: {mix_share} of timed cues." if code_mix_enabled else ""
 
     return local_source, result["output_video_path"], result["dubbed_audio_path"], result["subtitle_path"], (
         f"Completed {result['target_language']} dubbing. "
@@ -337,7 +338,7 @@ def build_app():
                             code_mix_enabled = gr.Checkbox(label="Mix a second language into the dub", value=False, info="Creates both source-voice dubs and replaces selected timed cues with the second language.")
                             with gr.Group(visible=False) as code_mix_options:
                                 code_mix_secondary = gr.Dropdown([item for item in matrix_languages if item != "hindi"], value="english", label="Second language")
-                                code_mix_intensity = gr.Slider(1, 3, value=2, step=1, label="Code-mixing intensity", info="1 light · 2 balanced · 3 frequent")
+                                code_mix_intensity = gr.Slider(1, 3, value=2, step=1, label="Second-language frequency", info="1 = 15% · 2 = 30% · 3 = 50% of timed cues")
                             burn = gr.Checkbox(label="Burn one-line translated captions", value=True, info="Bottom-centred captions use safe side margins and disappear with each spoken cue.")
                             run = gr.Button("Create localized video", variant="primary")
                         with gr.Column(scale=6, elem_classes=["dubx-panel"]):

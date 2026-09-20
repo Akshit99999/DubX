@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 from dubx_core import _mix_subtitle_tracks, dual_language_code_mix, text_to_text_dub
 from pipeline.transcreation import transcreate_batch
+from pipeline.remux import mix_timed_audio_tracks
 from utils.subtitles import SubtitleSegment, format_srt, format_vtt, normalize_srt_file
 from utils.syllable_budget import budget_for, count_syllables
 
@@ -59,6 +60,14 @@ class DubXOfflineTests(unittest.TestCase):
             self.assertEqual(len(segments), 2)
             self.assertEqual(len(cues), 1)
             self.assertTrue(any("Punjabi" in segment.translated_text for segment in segments))
+
+    def test_timed_code_mix_keeps_secondary_audio_inside_selected_cues(self):
+        with patch("pipeline.remux.require_ffmpeg"), patch("pipeline.remux._run") as run:
+            mix_timed_audio_tracks("primary.wav", "punjabi.wav", [(1.0, 2.0)], "mixed.wav")
+        command = run.call_args.args[0]
+        graph = command[command.index("-filter_complex") + 1]
+        self.assertIn("[1:a]volume=0:enable='not(between(t,1.000,2.000))'", graph)
+        self.assertNotIn("volume=0,volume=1", graph)
 
     def test_dynamic_code_mix_matrix(self):
         result = dual_language_code_mix(

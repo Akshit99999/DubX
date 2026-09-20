@@ -173,6 +173,17 @@ Run the web studio with:
 python app.py
 ```
 
+### Studio UI
+
+The web app opens on a landing screen with two role-based workspaces:
+
+- **Creator** — the full video, audio, and text creation tools, including YouTube ingestion, speaker-consent controls, aligned captions, and code-mix options.
+- **Viewer** — a read-only library of recent DubX video exports with simple playback.
+
+For local demos, use `creator / dubx-creator` or `viewer / dubx-viewer`. Override these with `DUBX_CREATOR_USERNAME`, `DUBX_CREATOR_PASSWORD`, `DUBX_VIEWER_USERNAME`, and `DUBX_VIEWER_PASSWORD`. This is a lightweight demo login; production deployments should place real authentication and authorization in front of Gradio.
+
+Suggested production UI upgrades are organization workspaces, project cards with processing history, resumable job progress, share links with expiry, searchable subtitle review, and separate publish controls for Viewer visibility.
+
 Studio mode accepts a local upload/recording or a YouTube URL. DubX downloads a single video with `yt-dlp`; only download material you are allowed to process.
 
 ### Fast video processing
