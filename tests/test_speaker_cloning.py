@@ -100,6 +100,37 @@ class TestSarvamSpeakerWorkflow(unittest.TestCase):
             mock_burn.assert_called_once()
             self.assertTrue(result["burned_captions"])
 
+    def test_video_code_mix_uses_secondary_source_voice_track(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "speaker.mp4"
+            source.write_bytes(b"fake-video")
+            primary_video = Path(directory) / "primary.mp4"
+            primary_audio = Path(directory) / "primary.wav"
+            primary_srt = Path(directory) / "primary.srt"
+            secondary_audio = Path(directory) / "secondary.wav"
+            secondary_srt = Path(directory) / "secondary.srt"
+            primary_srt.write_text("1\n00:00:00,000 --> 00:00:01,000\nनमस्ते\n", encoding="utf-8")
+            secondary_srt.write_text("1\n00:00:00,000 --> 00:00:01,000\nਸਤਿ ਸ੍ਰੀ ਅਕਾਲ\n", encoding="utf-8")
+            job = {
+                "job_id": "job_mix",
+                "clone_method": "sarvam-dubbing",
+                "exports": {"video": str(primary_video), "audio": str(primary_audio), "srt": str(primary_srt)},
+                "secondary_exports": {"audio": str(secondary_audio), "srt": str(secondary_srt)},
+            }
+            with patch("dubx_core.sarvam_dubbing_available", return_value=True), \
+                 patch("dubx_core.dub_media", return_value=job) as mock_dub, \
+                 patch("dubx_core.mix_timed_audio_tracks", return_value=str(primary_audio)) as mock_mix, \
+                 patch("dubx_core.remux_video", return_value=str(primary_video)) as mock_remux:
+                result = video_to_video_dub(
+                    str(source), "hindi", clone_voice=True, voice_clone_consent=True,
+                    code_mix_enabled=True, code_mix_secondary="punjabi", code_mix_intensity=3,
+                )
+            self.assertEqual(mock_dub.call_args.kwargs["secondary_language"], "punjabi")
+            mock_mix.assert_called_once()
+            mock_remux.assert_called_once()
+            self.assertTrue(result["code_mix"]["enabled"])
+            self.assertEqual(result["code_mix"]["secondary_language"], "punjabi")
+
 
 if __name__ == "__main__":
     unittest.main()

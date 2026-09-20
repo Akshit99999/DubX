@@ -22,11 +22,11 @@ from config import OUTPUT_DIR, VOICE_MAP, language_config
 from pipeline.asr import transcribe
 from pipeline.code_mixing import code_mix_text
 from pipeline.demux import extract_audio, separate_stems
-from pipeline.remux import burn_captions, remux_video
+from pipeline.remux import burn_captions, mix_timed_audio_tracks, remux_video
 from pipeline.sarvam_dubbing import available as sarvam_dubbing_available, dub_media
 from pipeline.transcreation import OFFLINE_IDIOMS, transcreate
 from pipeline.tts import synthesize
-from utils.subtitles import SubtitleSegment, write_subtitles
+from utils.subtitles import SubtitleSegment, read_subtitles, write_subtitles
 
 
 T = TypeVar("T")
@@ -48,6 +48,33 @@ def _sarvam_register(dialect_level: int, code_mix_enabled: bool) -> str:
         # in Indic speech while preserving speaker-cloned audio.
         return "modern-colloquial"
     return {1: "formal", 2: "common-indic", 3: "modern-colloquial"}.get(dialect_level, "auto")
+
+
+def _mix_subtitle_tracks(primary_srt: str, secondary_srt: str, intensity: int) -> tuple[list[SubtitleSegment], list[tuple[float, float]]]:
+    """Choose evenly distributed source-timed cues for the secondary language."""
+
+    primary = read_subtitles(primary_srt)
+    secondary = read_subtitles(secondary_srt)
+    paired_count = min(len(primary), len(secondary))
+    if not paired_count:
+        raise RuntimeError("The secondary-language dub did not contain timed subtitle cues")
+    level = max(1, min(3, int(intensity)))
+    ratio = {1: 0.15, 2: 0.30, 3: 0.50}[level]
+    chosen_count = max(1, round(paired_count * ratio))
+    chosen_indices = {
+        round((position + 1) * paired_count / (chosen_count + 1)) - 1
+        for position in range(chosen_count)
+    }
+    output: list[SubtitleSegment] = []
+    secondary_cues: list[tuple[float, float]] = []
+    for index, primary_segment in enumerate(primary):
+        text = primary_segment.translated_text or primary_segment.text
+        if index in chosen_indices and index < paired_count:
+            secondary_segment = secondary[index]
+            text = secondary_segment.translated_text or secondary_segment.text
+            secondary_cues.append((primary_segment.start, primary_segment.end))
+        output.append(SubtitleSegment(primary_segment.start, primary_segment.end, "", text))
+    return output, secondary_cues
 
 
 def _safe_stem(value: str, fallback: str = "dubx") -> str:
@@ -346,23 +373,42 @@ def video_to_video_dub(
         if not sarvam_dubbing_available():
             raise RuntimeError("SARVAM_API_KEY is required for source-speaker cloning.")
         _report(progress_callback, "clone", "Uploading video for source-speaker dubbing…", 0.35)
-        # Dubbing jobs preserve source identity; the provider's colloquial
-        # register is the compatible way to request a natural mixed-language
-        # delivery without replacing speakers with a preset TTS voice.
+        use_secondary_track = code_mix_enabled and code_mix_secondary.strip().lower() != target_language.strip().lower()
         dub_kwargs: dict[str, Any] = {
             "num_speakers": num_speakers,
             "register": _sarvam_register(dialect_level, code_mix_enabled),
         }
+        if use_secondary_track:
+            dub_kwargs["secondary_language"] = code_mix_secondary
         if progress_callback:
             dub_kwargs["progress_callback"] = progress_callback
         job = dub_media(str(source), source_language, target_language, "video", **dub_kwargs)
         exports = job["exports"]
         final_video = exports["video"]
+        dubbed_audio = exports["audio"]
+        subtitle_path = exports["srt"]
+        mixed_segments: list[SubtitleSegment] | None = None
+        if use_secondary_track:
+            secondary_exports = job.get("secondary_exports") or {}
+            if not secondary_exports.get("audio") or not secondary_exports.get("srt"):
+                raise RuntimeError("The secondary-language source-voice dub did not produce usable timed audio and subtitles")
+            mixed_segments, secondary_cues = _mix_subtitle_tracks(exports["srt"], secondary_exports["srt"], code_mix_intensity)
+            srt_path = str(OUTPUT_DIR / f"{base}_{target_language.lower()}_{code_mix_secondary.lower()}_mix.srt")
+            vtt_path = str(OUTPUT_DIR / f"{base}_{target_language.lower()}_{code_mix_secondary.lower()}_mix.vtt")
+            write_subtitles(mixed_segments, srt_path, vtt_path)
+            subtitle_path = srt_path
+            dubbed_audio = mix_timed_audio_tracks(
+                exports["audio"], secondary_exports["audio"], secondary_cues,
+                str(OUTPUT_DIR / f"dubbed_{base}_{target_language.lower()}_{code_mix_secondary.lower()}_mix.wav"),
+            )
         if burn_subtitles:
             # Sarvam's SRT belongs to its source-timeline-aligned dubbed audio;
             # burn that exact track, not the original source audio.
             final_video = output_path or str(OUTPUT_DIR / f"v2v_{base}_{target_language.lower()}_with_captions.mp4")
-            burn_captions(exports["video"], exports["audio"], exports["srt"], final_video)
+            burn_captions(exports["video"], dubbed_audio, subtitle_path, final_video)
+        elif use_secondary_track:
+            final_video = output_path or str(OUTPUT_DIR / f"v2v_{base}_{target_language.lower()}_mix.mp4")
+            remux_video(exports["video"], dubbed_audio, final_video, language_code=config["code"])
         _report(progress_callback, "complete", "Dubbed video and timestamped subtitles are ready.", 1.0)
         return {
             "pillar": "Video-to-Video + Captions" if burn_subtitles else "Video-to-Video",
@@ -370,11 +416,11 @@ def video_to_video_dub(
             "transcribed_source": "",
             "target_language": config["name"],
             "voice_used": "sarvam:source-speaker-clone",
-            "transcreated_text": _subtitle_text(exports.get("srt")),
-            "segments": [],
-            "dubbed_audio_path": exports["audio"],
-            "subtitle_path": exports["srt"],
-            "vtt_path": None,
+            "transcreated_text": _subtitle_text(subtitle_path),
+            "segments": mixed_segments or [],
+            "dubbed_audio_path": dubbed_audio,
+            "subtitle_path": subtitle_path,
+            "vtt_path": vtt_path if use_secondary_track else None,
             "burned_captions": burn_subtitles,
             "output_video_path": final_video,
             "bgm_preserved": True,
@@ -390,9 +436,9 @@ def video_to_video_dub(
             "source_language": source_language,
             "speaker_count": num_speakers,
             "code_mix": {
-                "enabled": code_mix_enabled,
-                "secondary_language": code_mix_secondary if code_mix_enabled else None,
-                "intensity": int(code_mix_intensity) if code_mix_enabled else None,
+                "enabled": use_secondary_track,
+                "secondary_language": code_mix_secondary if use_secondary_track else None,
+                "intensity": int(code_mix_intensity) if use_secondary_track else None,
                 "register": dub_kwargs["register"],
             },
             "sarvam_job_id": job["job_id"],

@@ -83,3 +83,26 @@ def normalize_srt_file(path: str | Path) -> str:
         normalized.append("\n".join([lines[0], lines[1], re.sub(r"\s+", " ", " ".join(lines[2:])).strip()]))
     subtitle_path.write_text("\n\n".join(block for block in normalized if block) + "\n", encoding="utf-8", newline="\n")
     return str(subtitle_path)
+
+
+def read_subtitles(path: str | Path) -> list[SubtitleSegment]:
+    """Read a standard SRT into timestamped subtitle segments."""
+
+    def to_seconds(value: str) -> float:
+        hours, minutes, seconds = value.strip().replace(",", ".").split(":")
+        return int(hours) * 3600 + int(minutes) * 60 + float(seconds)
+
+    subtitle_path = Path(path)
+    blocks = re.split(r"\r?\n\s*\r?\n", subtitle_path.read_text(encoding="utf-8", errors="replace").strip())
+    segments: list[SubtitleSegment] = []
+    for block in blocks:
+        lines = [line.strip() for line in block.splitlines() if line.strip()]
+        timing_index = next((i for i, line in enumerate(lines) if "-->" in line), None)
+        if timing_index is None or timing_index + 1 >= len(lines):
+            continue
+        try:
+            start, end = lines[timing_index].split("-->", 1)
+            segments.append(SubtitleSegment(to_seconds(start), to_seconds(end), "", " ".join(lines[timing_index + 1:])))
+        except (ValueError, IndexError):
+            continue
+    return segments

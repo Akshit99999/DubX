@@ -110,6 +110,7 @@ def dub_media(
     *,
     num_speakers: int = -1,
     register: str = "auto",
+    secondary_language: str | None = None,
     timeout_seconds: int = 3600,
     poll_seconds: int = 15,
     progress_callback: Callable[[dict[str, Any]], None] | None = None,
@@ -143,6 +144,9 @@ def dub_media(
 
     source_code = sarvam_language_code(source_language)
     target_code = sarvam_language_code(target_language)
+    secondary_code = sarvam_language_code(secondary_language) if secondary_language else None
+    if secondary_code == target_code:
+        secondary_code = None
     fast_mode = os.getenv("DUBX_FAST_MODE", "1").strip().lower() not in {"0", "false", "no", "off"}
     # A Sarvam video export already contains its dubbed audio. In fast mode we
     # avoid asking the service to render/download a second standalone audio
@@ -157,7 +161,7 @@ def dub_media(
     report("clone", "Creating source-speaker dubbing job…", 0.38)
     created = client.dubbing.create(
         source_language_code=source_code,
-        target_language_codes=[target_code],
+        target_language_codes=[target_code] + ([secondary_code] if secondary_code else []),
         export_options=export_options,
         voice_cloning=True,
         # Sarvam accepts -1 to diarize and count speakers automatically. The
@@ -216,7 +220,8 @@ def dub_media(
         raise SarvamDubbingError(getattr(job, "error_message", None) or f"Sarvam dubbing job {job_id} failed")
 
     report("export", "Rendering timed subtitles and dubbed media…", 0.84, job_id=job_id)
-    wanted = {(target_code, export_type) for export_type in export_options}
+    requested_codes = [target_code] + ([secondary_code] if secondary_code else [])
+    wanted = {(language_code, export_type) for language_code in requested_codes for export_type in export_options}
     deadline = time.monotonic() + timeout_seconds
     poll_interval = 3
     while True:
@@ -234,19 +239,22 @@ def dub_media(
         poll_interval = min(6, poll_interval + 1)
 
     suffixes = {"video": ".mp4", "audio": ".wav", "mp3": ".mp3", "srt": ".srt"}
-    downloaded: dict[str, str] = {}
+    downloaded_by_language: dict[str, dict[str, str]] = {}
     stem = media.stem
     for item in exports:
-        if item.target_language != target_code or item.status != "completed" or getattr(item, "is_stale", False):
+        if item.target_language not in {target_code, secondary_code} or item.status != "completed" or getattr(item, "is_stale", False):
             continue
         url = getattr(item, "download_url", None)
         if not url:
             continue
         export_type = item.export_type
         suffix = suffixes.get(export_type, ".bin")
-        target = OUTPUT_DIR / f"sarvam_{stem}_{target_language}_{export_type}{suffix}"
+        export_language = "secondary" if item.target_language == secondary_code else target_language
+        target = OUTPUT_DIR / f"sarvam_{stem}_{export_language}_{export_type}{suffix}"
         report("download", f"Downloading {export_type} export…", 0.91, job_id=job_id)
-        downloaded[export_type] = _download(url, target)
+        downloaded_by_language.setdefault(item.target_language, {})[export_type] = _download(url, target)
+
+    downloaded = downloaded_by_language.get(target_code, {})
 
     required = {"audio", "srt"}
     if media_kind == "video":
@@ -270,12 +278,24 @@ def dub_media(
         from utils.subtitles import normalize_srt_file
 
         normalize_srt_file(downloaded["srt"])
+    secondary_exports = downloaded_by_language.get(secondary_code, {}) if secondary_code else {}
+    if secondary_exports and media_kind == "video" and "audio" not in secondary_exports and "video" in secondary_exports:
+        from pipeline.demux import extract_audio
+
+        secondary_audio = OUTPUT_DIR / f"sarvam_{stem}_secondary_audio.wav"
+        extract_audio(secondary_exports["video"], str(secondary_audio))
+        secondary_exports["audio"] = str(secondary_audio)
+    if secondary_exports.get("srt"):
+        from utils.subtitles import normalize_srt_file
+
+        normalize_srt_file(secondary_exports["srt"])
     report("complete", "Sarvam dubbing export is ready.", 0.98, job_id=job_id)
     return {
         "job_id": job_id,
         "source_language_code": source_code,
         "target_language_code": target_code,
         "exports": downloaded,
+        "secondary_exports": secondary_exports,
         "status": getattr(job, "status", "completed"),
         "clone_method": "sarvam-dubbing",
     }

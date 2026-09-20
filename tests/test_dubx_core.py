@@ -3,7 +3,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-from dubx_core import dual_language_code_mix, text_to_text_dub
+from dubx_core import _mix_subtitle_tracks, dual_language_code_mix, text_to_text_dub
 from pipeline.transcreation import transcreate_batch
 from utils.subtitles import SubtitleSegment, format_srt, format_vtt, normalize_srt_file
 from utils.syllable_budget import budget_for, count_syllables
@@ -42,6 +42,23 @@ class DubXOfflineTests(unittest.TestCase):
             path.write_text("1\n00:00:00,000 --> 00:00:01,000\nनमस्ते\nदोस्त\n", encoding="utf-8")
             normalize_srt_file(path)
             self.assertIn("नमस्ते दोस्त", path.read_text(encoding="utf-8"))
+
+    def test_timed_code_mix_uses_secondary_cues(self):
+        with tempfile.TemporaryDirectory() as directory:
+            primary = Path(directory) / "primary.srt"
+            secondary = Path(directory) / "secondary.srt"
+            primary.write_text(
+                "1\n00:00:00,000 --> 00:00:01,000\nHindi one\n\n2\n00:00:01,000 --> 00:00:02,000\nHindi two\n",
+                encoding="utf-8",
+            )
+            secondary.write_text(
+                "1\n00:00:00,000 --> 00:00:01,000\nPunjabi one\n\n2\n00:00:01,000 --> 00:00:02,000\nPunjabi two\n",
+                encoding="utf-8",
+            )
+            segments, cues = _mix_subtitle_tracks(str(primary), str(secondary), intensity=3)
+            self.assertEqual(len(segments), 2)
+            self.assertEqual(len(cues), 1)
+            self.assertTrue(any("Punjabi" in segment.translated_text for segment in segments))
 
     def test_dynamic_code_mix_matrix(self):
         result = dual_language_code_mix(
